@@ -1,13 +1,18 @@
 --[[
-    Modern UI Library - CORRECTED VERSION
+    Modern UI Library - ENHANCED VERSION
     A comprehensive UI library for Roblox with support for:
     - Tabs
-    - Buttons (normal, toggleable, one-time action)
+    - Buttons (normal, toggleable, one-time action) with setText
     - Info containers
-    - Sliders
+    - Sliders (with decimal support and custom labels)
     - Textboxes
-    - Dropdowns (small, positioned properly)
+    - Dropdowns (small, positioned properly) with setText
     - And more!
+    
+    NEW FEATURES:
+    - setText() support for: Buttons, Sliders, Action Toggles, Toggles, Type Switchers, Dropdowns
+    - Decimal support for sliders (config.decimals)
+    - Custom text labels for sliders (config.labels) - optional
 ]]
 
 local UILibrary = {}
@@ -370,7 +375,7 @@ function UILibrary:_selectTab(tab)
     self:_moveIndicatorTo(tab.button)
 end
 
--- Button
+-- Button (NOW WITH setText)
 function UILibrary:addButton(config)
     config = config or {}
     local text = config.text or "Button"
@@ -397,10 +402,17 @@ function UILibrary:addButton(config)
     button.MouseButton1Click:Connect(callback)
     
     table.insert(self.elements, {type = "button", element = button})
-    return button
+    
+    -- Return API with setText
+    return {
+        setText = function(newText)
+            button.Text = newText
+        end,
+        element = button
+    }
 end
 
--- Action Toggle (CORRECTED: Looks like toggle, acts as one-time action with green flash)
+-- Action Toggle (NOW WITH setText)
 function UILibrary:addActionToggle(config)
     config = config or {}
     local text = config.text or "Action"
@@ -474,10 +486,17 @@ function UILibrary:addActionToggle(config)
     createHoverEffect(checkbox, checkbox.BackgroundColor3)
     
     table.insert(self.elements, {type = "actiontoggle", element = row, checkbox = checkbox})
-    return row
+    
+    -- Return API with setText
+    return {
+        setText = function(newText)
+            label.Text = newText
+        end,
+        element = row
+    }
 end
 
--- Toggle Button
+-- Toggle Button (NOW WITH setText)
 function UILibrary:addToggle(config)
     config = config or {}
     local text = config.text or "Toggle"
@@ -538,11 +557,14 @@ function UILibrary:addToggle(config)
         end,
         getState = function()
             return state
+        end,
+        setText = function(newText)
+            label.Text = newText
         end
     }
 end
 
--- Type-Switching Button (like pokeball -> greatball)
+-- Type-Switching Button (NOW WITH setText)
 function UILibrary:addTypeSwitcher(config)
     config = config or {}
     local types = config.types or {"Option 1", "Option 2"}
@@ -583,6 +605,9 @@ function UILibrary:addTypeSwitcher(config)
         end,
         getCurrentType = function()
             return types[currentIndex], currentIndex
+        end,
+        setText = function(newText)
+            button.Text = newText
         end
     }
 end
@@ -701,20 +726,70 @@ function UILibrary:addTextbox(config)
     }
 end
 
--- Slider
+-- Slider (NOW WITH DECIMALS AND CUSTOM LABELS!)
 function UILibrary:addSlider(config)
     config = config or {}
     local min = config.min or 0
     local max = config.max or 100
     local default = config.default or 50
     local suffix = config.suffix or ""
+    local decimals = config.decimals or 0  -- NEW: Decimal places (0 = integers)
+    local labels = config.labels or nil    -- NEW: Custom labels {value, label} or nil
     local callback = config.callback or function() end
+    
+    -- Helper function to format value with decimals
+    local function formatValue(value)
+        if decimals == 0 then
+            return tostring(math.floor(value + 0.5))
+        else
+            local multiplier = 10 ^ decimals
+            return string.format("%." .. decimals .. "f", math.floor(value * multiplier + 0.5) / multiplier)
+        end
+    end
+    
+    -- Helper function to get custom label based on value
+    local function getCustomLabel(value)
+        if not labels then return nil end
+        
+        -- labels format: {{value1, "Label1"}, {value2, "Label2"}, ...}
+        -- Find the appropriate label based on value
+        for i = 1, #labels do
+            local threshold = labels[i][1]
+            local labelText = labels[i][2]
+            
+            if i == #labels then
+                -- Last label
+                if value >= threshold then
+                    return labelText
+                end
+            else
+                -- Check if value is between this and next threshold
+                local nextThreshold = labels[i + 1][1]
+                if value >= threshold and value < nextThreshold then
+                    return labelText
+                end
+            end
+        end
+        
+        -- Fallback to first label if below all thresholds
+        return labels[1][2]
+    end
+    
+    local labelText = config.text or "Slider"
     
     -- Label
     local label = Instance.new("TextLabel")
     label.Size = UDim2.new(1, 0, 0, 20)
     label.BackgroundTransparency = 1
-    label.Text = (config.text or "Slider") .. ": " .. default .. suffix
+    
+    -- Set initial label text
+    if labels then
+        local customLabel = getCustomLabel(default)
+        label.Text = labelText .. ": " .. customLabel .. " (" .. formatValue(default) .. suffix .. ")"
+    else
+        label.Text = labelText .. ": " .. formatValue(default) .. suffix
+    end
+    
     label.TextColor3 = self.theme.text
     label.Font = Enum.Font.Code
     label.TextSize = 11
@@ -762,8 +837,21 @@ function UILibrary:addSlider(config)
         percentage = math.clamp(percentage, 0, 1)
         sliderFill.Size = UDim2.new(percentage, 0, 1, 0)
         
-        currentValue = math.floor(min + percentage * (max - min) + 0.5)
-        label.Text = (config.text or "Slider") .. ": " .. currentValue .. suffix
+        -- Calculate value with decimals
+        if decimals == 0 then
+            currentValue = math.floor(min + percentage * (max - min) + 0.5)
+        else
+            local multiplier = 10 ^ decimals
+            currentValue = math.floor((min + percentage * (max - min)) * multiplier + 0.5) / multiplier
+        end
+        
+        -- Update label with custom labels or regular format
+        if labels then
+            local customLabel = getCustomLabel(currentValue)
+            label.Text = labelText .. ": " .. customLabel .. " (" .. formatValue(currentValue) .. suffix .. ")"
+        else
+            label.Text = labelText .. ": " .. formatValue(currentValue) .. suffix
+        end
         
         callback(currentValue, percentage)
     end
@@ -817,11 +905,21 @@ function UILibrary:addSlider(config)
         end,
         getValue = function()
             return currentValue
+        end,
+        setText = function(newText)
+            labelText = newText
+            -- Update the label display
+            if labels then
+                local customLabel = getCustomLabel(currentValue)
+                label.Text = labelText .. ": " .. customLabel .. " (" .. formatValue(currentValue) .. suffix .. ")"
+            else
+                label.Text = labelText .. ": " .. formatValue(currentValue) .. suffix
+            end
         end
     }
 end
 
--- Dropdown (CORRECTED: Small size, smart canvas resize only when needed)
+-- Dropdown (NOW WITH setText)
 function UILibrary:addDropdown(config)
     config = config or {}
     local options = config.options or {"Option 1", "Option 2"}
@@ -835,17 +933,19 @@ function UILibrary:addDropdown(config)
     row.LayoutOrder = config.layoutOrder or (#self.elements + 1)
     row.Parent = self.content
     
+    local dropdownLabel = nil
+    
     -- Label (if provided)
     if config.label then
-        local label = Instance.new("TextLabel")
-        label.Size = UDim2.new(0.5, 0, 1, 0)
-        label.BackgroundTransparency = 1
-        label.Text = config.label
-        label.TextColor3 = self.theme.text
-        label.Font = Enum.Font.Code
-        label.TextSize = 12
-        label.TextXAlignment = Enum.TextXAlignment.Left
-        label.Parent = row
+        dropdownLabel = Instance.new("TextLabel")
+        dropdownLabel.Size = UDim2.new(0.5, 0, 1, 0)
+        dropdownLabel.BackgroundTransparency = 1
+        dropdownLabel.Text = config.label
+        dropdownLabel.TextColor3 = self.theme.text
+        dropdownLabel.Font = Enum.Font.Code
+        dropdownLabel.TextSize = 12
+        dropdownLabel.TextXAlignment = Enum.TextXAlignment.Left
+        dropdownLabel.Parent = row
     end
     
     -- Dropdown button (SMALL - only takes up right side or specified width)
@@ -963,6 +1063,11 @@ function UILibrary:addDropdown(config)
         end,
         getOption = function()
             return currentOption
+        end,
+        setText = function(newText)
+            if dropdownLabel then
+                dropdownLabel.Text = newText
+            end
         end
     }
 end
