@@ -388,85 +388,68 @@ function Library:CreateWindow(config)
                 return textbox
             end
             
-            -- NEW: Status Display Box
-            function Section:CreateStatusDisplay(config)
-                local statusBox = Instance.new("TextLabel")
-                statusBox.Size = UDim2.new(1, 0, 0, config.Height or 80)
-                statusBox.BackgroundColor3 = theme.dropdown
-                statusBox.BorderColor3 = config.BorderColor or theme.accent
-                statusBox.BorderSizePixel = 1
-                statusBox.Text = config.DefaultText or "Status: Idle"
-                statusBox.TextColor3 = theme.text
-                statusBox.Font = Enum.Font.Code
-                statusBox.TextSize = config.TextSize or 11
-                statusBox.TextYAlignment = Enum.TextYAlignment.Top
-                statusBox.TextXAlignment = Enum.TextXAlignment.Left
-                statusBox.LayoutOrder = self.layoutOrder * 100 + #self.elements + 1
-                statusBox.Parent = self.parent
-                createCorner(statusBox, 4)
-                
-                createPadding(statusBox, 10, 5, 10, 5)
-                
-                -- Method to update text
-                function statusBox:UpdateText(newText)
-                    self.Text = newText
-                end
-                
-                -- Method to update color
-                function statusBox:UpdateColor(newColor)
-                    self.TextColor3 = newColor
-                end
-                
-                table.insert(self.elements, statusBox)
-                return statusBox
-            end
-            
-            -- NEW: Info Box (similar to status but with title)
-            function Section:CreateInfoBox(config)
-                local container = Instance.new("Frame")
-                container.Size = UDim2.new(1, 0, 0, (config.Height or 80) + 20)
-                container.BackgroundTransparency = 1
-                container.LayoutOrder = self.layoutOrder * 100 + #self.elements + 1
-                container.Parent = self.parent
-                
-                local titleLabel = Instance.new("TextLabel")
-                titleLabel.Size = UDim2.new(1, 0, 0, 20)
-                titleLabel.BackgroundTransparency = 1
-                titleLabel.Text = config.Title or "INFO"
-                titleLabel.TextColor3 = theme.text
-                titleLabel.Font = Enum.Font.Code
-                titleLabel.TextSize = 12
-                titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-                titleLabel.Parent = container
-                
-                local infoBox = Instance.new("TextLabel")
-                infoBox.Size = UDim2.new(1, 0, 1, -20)
-                infoBox.Position = UDim2.new(0, 0, 0, 20)
-                infoBox.BackgroundColor3 = theme.dropdown
-                infoBox.BorderColor3 = config.BorderColor or theme.accent
-                infoBox.BorderSizePixel = 1
-                infoBox.Text = config.DefaultText or "No data"
-                infoBox.TextColor3 = theme.text
-                infoBox.Font = Enum.Font.Code
-                infoBox.TextSize = config.TextSize or 10
-                infoBox.TextYAlignment = Enum.TextYAlignment.Top
-                infoBox.TextXAlignment = Enum.TextXAlignment.Left
-                infoBox.Parent = container
-                createCorner(infoBox, 4)
-                
-                createPadding(infoBox, 10, 5, 10, 5)
-                
-                function infoBox:UpdateText(newText)
-                    self.Text = newText
-                end
-                
-                function infoBox:UpdateColor(newColor)
-                    self.TextColor3 = newColor
-                end
-                
-                table.insert(self.elements, container)
-                return infoBox
-            end
+-- NEW: Status Display Box (FIXED)
+function Section:CreateStatusDisplay(config)
+    local statusBox = Instance.new("TextLabel")
+    statusBox.Size = UDim2.new(1, 0, 0, config.Height or 80)
+    statusBox.BackgroundColor3 = theme.dropdown
+    statusBox.BorderColor3 = config.BorderColor or theme.accent
+    statusBox.BorderSizePixel = 1
+    statusBox.Text = config.DefaultText or "Status: Idle"
+    statusBox.TextColor3 = theme.text
+    statusBox.Font = Enum.Font.Code
+    statusBox.TextSize = config.TextSize or 11
+    statusBox.TextYAlignment = Enum.TextYAlignment.Top
+    statusBox.TextXAlignment = Enum.TextXAlignment.Left
+    statusBox.LayoutOrder = self.layoutOrder * 100 + #self.elements + 1
+    statusBox.Parent = self.parent
+    createCorner(statusBox, 4)
+    
+    createPadding(statusBox, 10, 5, 10, 5)
+    
+    -- Store reference for updates
+    table.insert(self.elements, statusBox)
+    return statusBox
+end
+
+-- NEW: Info Box (FIXED)
+function Section:CreateInfoBox(config)
+    local container = Instance.new("Frame")
+    container.Size = UDim2.new(1, 0, 0, (config.Height or 80) + 20)
+    container.BackgroundTransparency = 1
+    container.LayoutOrder = self.layoutOrder * 100 + #self.elements + 1
+    container.Parent = self.parent
+    
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.Size = UDim2.new(1, 0, 0, 20)
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.Text = config.Title or "INFO"
+    titleLabel.TextColor3 = theme.text
+    titleLabel.Font = Enum.Font.Code
+    titleLabel.TextSize = 12
+    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    titleLabel.Parent = container
+    
+    local infoBox = Instance.new("TextLabel")
+    infoBox.Size = UDim2.new(1, 0, 1, -20)
+    infoBox.Position = UDim2.new(0, 0, 0, 20)
+    infoBox.BackgroundColor3 = theme.dropdown
+    infoBox.BorderColor3 = config.BorderColor or theme.accent
+    infoBox.BorderSizePixel = 1
+    infoBox.Text = config.DefaultText or "No data"
+    infoBox.TextColor3 = theme.text
+    infoBox.Font = Enum.Font.Code
+    infoBox.TextSize = config.TextSize or 10
+    infoBox.TextYAlignment = Enum.TextYAlignment.Top
+    infoBox.TextXAlignment = Enum.TextXAlignment.Left
+    infoBox.Parent = container
+    createCorner(infoBox, 4)
+    
+    createPadding(infoBox, 10, 5, 10, 5)
+    
+    table.insert(self.elements, container)
+    return infoBox
+end
             
             -- NEW: Slider
             function Section:CreateSlider(config)
