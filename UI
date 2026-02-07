@@ -1,12 +1,12 @@
 --[[
-    Modern UI Library
+    Modern UI Library - FIXED VERSION
     A comprehensive UI library for Roblox with support for:
     - Tabs
-    - Buttons (normal, toggleable, type-switching)
+    - Buttons (normal, toggleable, one-time action)
     - Info containers
     - Sliders
     - Textboxes
-    - Dropdowns
+    - Dropdowns (with proper canvas resizing)
     - And more!
 ]]
 
@@ -324,11 +324,15 @@ function UILibrary:addTab(name)
     tab.layout.Padding = UDim.new(0, 6)
     tab.layout.Parent = tab.content
     
+    -- Store base canvas size for this tab
+    tab.baseCanvasHeight = 10
+    
     -- Auto-resize canvas
     tab.content.CanvasSize = UDim2.new(0, 0, 0, 10)
     tab.layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
         local h = tab.layout.AbsoluteContentSize.Y + 18
-        tab.content.CanvasSize = UDim2.new(0, 0, 0, math.max(h, 200))
+        tab.baseCanvasHeight = math.max(h, 200)
+        tab.content.CanvasSize = UDim2.new(0, 0, 0, tab.baseCanvasHeight)
     end)
     
     -- Button click handler
@@ -396,6 +400,55 @@ function UILibrary:addButton(config)
     return button
 end
 
+-- Action Button (One-time use, no toggle - plays green flash animation)
+function UILibrary:addActionButton(config)
+    config = config or {}
+    local text = config.text or "Action Button"
+    local callback = config.callback or function() end
+    
+    local button = Instance.new("TextButton")
+    button.Size = UDim2.new(1, 0, 0, config.height or 40)
+    button.BackgroundColor3 = self.theme.surface
+    button.BorderColor3 = config.borderColor or self.theme.accent
+    button.BorderSizePixel = 2
+    button.Text = text
+    button.TextColor3 = config.textColor or self.theme.text
+    button.Font = Enum.Font.Code
+    button.TextSize = config.textSize or 12
+    button.LayoutOrder = config.layoutOrder or (#self.elements + 1)
+    button.Parent = self.content
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 4)
+    corner.Parent = button
+    
+    createHoverEffect(button, self.theme.surface)
+    
+    -- Store original colors
+    local originalBg = button.BackgroundColor3
+    local originalText = button.TextColor3
+    
+    button.MouseButton1Click:Connect(function()
+        -- Flash green animation
+        task.spawn(function()
+            -- Turn green
+            button.BackgroundColor3 = self.theme.success
+            button.TextColor3 = self.theme.background
+            task.wait(0.25)
+            
+            -- Revert to original
+            button.BackgroundColor3 = originalBg
+            button.TextColor3 = originalText
+        end)
+        
+        -- Execute callback
+        callback()
+    end)
+    
+    table.insert(self.elements, {type = "actionbutton", element = button})
+    return button
+end
+
 -- Toggle Button
 function UILibrary:addToggle(config)
     config = config or {}
@@ -435,6 +488,7 @@ function UILibrary:addToggle(config)
     label.Font = Enum.Font.Code
     label.TextSize = 12
     label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextYAlignment = Enum.TextYAlignment.Center -- FIX: Center align vertically
     label.Parent = row
     
     local state = default
@@ -739,7 +793,7 @@ function UILibrary:addSlider(config)
     }
 end
 
--- Dropdown
+-- Dropdown (FIXED: Proper canvas resize support)
 function UILibrary:addDropdown(config)
     config = config or {}
     local options = config.options or {"Option 1", "Option 2"}
@@ -797,20 +851,52 @@ function UILibrary:addDropdown(config)
             currentOption = option
             dropdown.Text = option
             menu.Visible = false
+            
+            -- FIX: Restore canvas size when option is selected
+            local tab = self.currentTab or self
+            if tab and tab.baseCanvasHeight then
+                tab.content.CanvasSize = UDim2.new(0, 0, 0, tab.baseCanvasHeight)
+            end
+            
             callback(option)
         end)
         
         createHoverEffect(optionBtn, self.theme.surface)
     end
     
-    -- Resize menu
+    -- Resize menu based on content
     menuLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
         local h = menuLayout.AbsoluteContentSize.Y + 8
         menu.Size = UDim2.new(1, 0, 0, h)
     end)
     
+    -- FIX: Handle canvas resizing when dropdown opens/closes
     dropdown.MouseButton1Click:Connect(function()
         menu.Visible = not menu.Visible
+        
+        local tab = self.currentTab or self
+        if not tab or not tab.content then return end
+        
+        if menu.Visible then
+            -- Wait for layout to update
+            task.wait()
+            
+            -- Calculate extra space needed for dropdown menu
+            local menuHeight = menu.AbsoluteSize.Y
+            local baseHeight = tab.baseCanvasHeight or 200
+            
+            -- Expand canvas to show dropdown
+            tab.content.CanvasSize = UDim2.new(0, 0, 0, baseHeight + menuHeight + 24)
+            
+            -- Scroll to show the dropdown
+            local dropdownPos = dropdown.AbsolutePosition.Y - tab.content.AbsolutePosition.Y
+            local scrollTarget = math.max(0, dropdownPos - 20)
+            tab.content.CanvasPosition = Vector2.new(0, scrollTarget)
+        else
+            -- FIX: Restore original canvas size when dropdown closes
+            local baseHeight = tab.baseCanvasHeight or 200
+            tab.content.CanvasSize = UDim2.new(0, 0, 0, baseHeight)
+        end
     end)
     
     table.insert(self.elements, {type = "dropdown", element = dropdown, menu = menu})
