@@ -1,12 +1,12 @@
 --[[
-    Modern UI Library - FIXED VERSION
+    Modern UI Library - CORRECTED VERSION
     A comprehensive UI library for Roblox with support for:
     - Tabs
     - Buttons (normal, toggleable, one-time action)
     - Info containers
     - Sliders
     - Textboxes
-    - Dropdowns (with proper canvas resizing)
+    - Dropdowns (small, positioned properly)
     - And more!
 ]]
 
@@ -400,53 +400,81 @@ function UILibrary:addButton(config)
     return button
 end
 
--- Action Button (One-time use, no toggle - plays green flash animation)
-function UILibrary:addActionButton(config)
+-- Action Toggle (CORRECTED: Looks like toggle, acts as one-time action with green flash)
+function UILibrary:addActionToggle(config)
     config = config or {}
-    local text = config.text or "Action Button"
+    local text = config.text or "Action"
     local callback = config.callback or function() end
     
-    local button = Instance.new("TextButton")
-    button.Size = UDim2.new(1, 0, 0, config.height or 40)
-    button.BackgroundColor3 = self.theme.surface
-    button.BorderColor3 = config.borderColor or self.theme.accent
-    button.BorderSizePixel = 2
-    button.Text = text
-    button.TextColor3 = config.textColor or self.theme.text
-    button.Font = Enum.Font.Code
-    button.TextSize = config.textSize or 12
-    button.LayoutOrder = config.layoutOrder or (#self.elements + 1)
-    button.Parent = self.content
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1, 0, 0, config.height or 30)
+    row.BackgroundTransparency = 1
+    row.LayoutOrder = config.layoutOrder or (#self.elements + 1)
+    row.Parent = self.content
     
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 4)
-    corner.Parent = button
+    local checkbox = Instance.new("TextButton")
+    checkbox.Size = UDim2.new(0, 24, 0, 24)
+    checkbox.Position = UDim2.new(0, 4, 0, 3)
+    checkbox.BackgroundColor3 = self.theme.dropdown
+    checkbox.BorderColor3 = self.theme.accent
+    checkbox.BorderSizePixel = 1
+    checkbox.Text = ""
+    checkbox.Font = Enum.Font.Code
+    checkbox.TextSize = 16
+    checkbox.TextScaled = true
+    checkbox.TextColor3 = self.theme.toggleOn
+    checkbox.Parent = row
     
-    createHoverEffect(button, self.theme.surface)
+    local checkCorner = Instance.new("UICorner")
+    checkCorner.CornerRadius = UDim.new(0, 4)
+    checkCorner.Parent = checkbox
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -32, 1, 0)
+    label.Position = UDim2.new(0, 32, 0, 0)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = self.theme.text
+    label.Font = Enum.Font.Code
+    label.TextSize = 12
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextYAlignment = Enum.TextYAlignment.Center
+    label.Parent = row
+    
+    -- Keep checkbox in "off" state (grey)
+    updateCheckboxAppearance(checkbox, false, self.theme)
     
     -- Store original colors
-    local originalBg = button.BackgroundColor3
-    local originalText = button.TextColor3
+    local originalBg = checkbox.BackgroundColor3
+    local originalBorder = checkbox.BorderColor3
     
-    button.MouseButton1Click:Connect(function()
-        -- Flash green animation
+    checkbox.MouseButton1Click:Connect(function()
+        -- Flash green animation (1 second)
         task.spawn(function()
             -- Turn green
-            button.BackgroundColor3 = self.theme.success
-            button.TextColor3 = self.theme.background
-            task.wait(0.25)
+            checkbox.BackgroundColor3 = self.theme.toggleOn
+            checkbox.BorderColor3 = self.theme.toggleOn
+            checkbox.Text = "✓"
+            checkbox.TextColor3 = self.theme.background
+            checkbox.TextScaled = true
             
-            -- Revert to original
-            button.BackgroundColor3 = originalBg
-            button.TextColor3 = originalText
+            task.wait(1)
+            
+            -- Revert to grey/off state
+            checkbox.BackgroundColor3 = originalBg
+            checkbox.BorderColor3 = originalBorder
+            checkbox.Text = ""
+            checkbox.TextColor3 = self.theme.toggleOn
         end)
         
         -- Execute callback
         callback()
     end)
     
-    table.insert(self.elements, {type = "actionbutton", element = button})
-    return button
+    createHoverEffect(checkbox, checkbox.BackgroundColor3)
+    
+    table.insert(self.elements, {type = "actiontoggle", element = row, checkbox = checkbox})
+    return row
 end
 
 -- Toggle Button
@@ -488,7 +516,7 @@ function UILibrary:addToggle(config)
     label.Font = Enum.Font.Code
     label.TextSize = 12
     label.TextXAlignment = Enum.TextXAlignment.Left
-    label.TextYAlignment = Enum.TextYAlignment.Center -- FIX: Center align vertically
+    label.TextYAlignment = Enum.TextYAlignment.Center
     label.Parent = row
     
     local state = default
@@ -793,16 +821,40 @@ function UILibrary:addSlider(config)
     }
 end
 
--- Dropdown (FIXED: Proper canvas resize support)
+-- Dropdown (CORRECTED: Small size, smart canvas resize only when needed)
 function UILibrary:addDropdown(config)
     config = config or {}
     local options = config.options or {"Option 1", "Option 2"}
     local default = config.default or options[1]
     local callback = config.callback or function() end
     
-    -- Dropdown button
+    -- Container row for label and dropdown
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1, 0, 0, config.height or 26)
+    row.BackgroundTransparency = 1
+    row.LayoutOrder = config.layoutOrder or (#self.elements + 1)
+    row.Parent = self.content
+    
+    -- Label (if provided)
+    if config.label then
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.new(0.5, 0, 1, 0)
+        label.BackgroundTransparency = 1
+        label.Text = config.label
+        label.TextColor3 = self.theme.text
+        label.Font = Enum.Font.Code
+        label.TextSize = 12
+        label.TextXAlignment = Enum.TextXAlignment.Left
+        label.Parent = row
+    end
+    
+    -- Dropdown button (SMALL - only takes up right side or specified width)
+    local dropdownWidth = config.width or 0.48
+    local dropdownPosition = config.position or 0.52
+    
     local dropdown = Instance.new("TextButton")
-    dropdown.Size = UDim2.new(1, 0, 0, config.height or 35)
+    dropdown.Size = UDim2.new(dropdownWidth, 0, 1, 0)
+    dropdown.Position = UDim2.new(dropdownPosition, 0, 0, 0)
     dropdown.BackgroundColor3 = self.theme.dropdown
     dropdown.BorderColor3 = self.theme.accent
     dropdown.BorderSizePixel = 1
@@ -810,8 +862,7 @@ function UILibrary:addDropdown(config)
     dropdown.TextColor3 = self.theme.text
     dropdown.Font = Enum.Font.Code
     dropdown.TextSize = 12
-    dropdown.LayoutOrder = config.layoutOrder or (#self.elements + 1)
-    dropdown.Parent = self.content
+    dropdown.Parent = row
     
     local corner = Instance.new("UICorner")
     corner.CornerRadius = UDim.new(0, 4)
@@ -852,7 +903,7 @@ function UILibrary:addDropdown(config)
             dropdown.Text = option
             menu.Visible = false
             
-            -- FIX: Restore canvas size when option is selected
+            -- Restore canvas size when option is selected
             local tab = self.currentTab or self
             if tab and tab.baseCanvasHeight then
                 tab.content.CanvasSize = UDim2.new(0, 0, 0, tab.baseCanvasHeight)
@@ -870,7 +921,7 @@ function UILibrary:addDropdown(config)
         menu.Size = UDim2.new(1, 0, 0, h)
     end)
     
-    -- FIX: Handle canvas resizing when dropdown opens/closes
+    -- SMART canvas resizing: Only expand if dropdown would overflow
     dropdown.MouseButton1Click:Connect(function()
         menu.Visible = not menu.Visible
         
@@ -878,28 +929,33 @@ function UILibrary:addDropdown(config)
         if not tab or not tab.content then return end
         
         if menu.Visible then
-            -- Wait for layout to update
             task.wait()
             
-            -- Calculate extra space needed for dropdown menu
             local menuHeight = menu.AbsoluteSize.Y
             local baseHeight = tab.baseCanvasHeight or 200
             
-            -- Expand canvas to show dropdown
-            tab.content.CanvasSize = UDim2.new(0, 0, 0, baseHeight + menuHeight + 24)
+            -- Calculate if dropdown would overflow
+            local dropdownBottomPos = dropdown.AbsolutePosition.Y + dropdown.AbsoluteSize.Y + menuHeight
+            local contentBottomPos = tab.content.AbsolutePosition.Y + tab.content.AbsoluteSize.Y
             
-            -- Scroll to show the dropdown
-            local dropdownPos = dropdown.AbsolutePosition.Y - tab.content.AbsolutePosition.Y
-            local scrollTarget = math.max(0, dropdownPos - 20)
-            tab.content.CanvasPosition = Vector2.new(0, scrollTarget)
+            -- Only expand if dropdown would go beyond visible area
+            if dropdownBottomPos > contentBottomPos then
+                local extraSpace = dropdownBottomPos - contentBottomPos + 24
+                tab.content.CanvasSize = UDim2.new(0, 0, 0, baseHeight + extraSpace)
+                
+                -- Scroll to show dropdown
+                local dropdownRelativePos = dropdown.AbsolutePosition.Y - tab.content.AbsolutePosition.Y
+                local scrollTarget = math.max(0, dropdownRelativePos - 20)
+                tab.content.CanvasPosition = Vector2.new(0, scrollTarget)
+            end
         else
-            -- FIX: Restore original canvas size when dropdown closes
+            -- Restore original canvas size when dropdown closes
             local baseHeight = tab.baseCanvasHeight or 200
             tab.content.CanvasSize = UDim2.new(0, 0, 0, baseHeight)
         end
     end)
     
-    table.insert(self.elements, {type = "dropdown", element = dropdown, menu = menu})
+    table.insert(self.elements, {type = "dropdown", element = row, dropdown = dropdown, menu = menu})
     return {
         setOption = function(option)
             currentOption = option
