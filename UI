@@ -1,14 +1,28 @@
--- UILibrary.lua (Enhanced Version)
-local Library = {}
-Library.__index = Library
+--[[
+    Modern UI Library
+    A comprehensive UI library for Roblox with support for:
+    - Tabs
+    - Buttons (normal, toggleable, type-switching)
+    - Info containers
+    - Sliders
+    - Textboxes
+    - Dropdowns
+    - And more!
+]]
 
-local UserInputService = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
+local UILibrary = {}
+UILibrary.__index = UILibrary
+
+-- Services
 local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+
 local Player = Players.LocalPlayer
 
--- Theme
-local theme = {
+-- Default theme
+local defaultTheme = {
     background = Color3.fromRGB(10, 10, 10),
     surface = Color3.fromRGB(20, 20, 20),
     accent = Color3.fromRGB(0, 255, 136),
@@ -24,101 +38,190 @@ local theme = {
     success = Color3.fromRGB(120, 220, 150),
     error = Color3.fromRGB(255, 120, 120),
     warning = Color3.fromRGB(255, 200, 100),
-    highlight = Color3.fromRGB(255, 255, 255),
-    info = Color3.fromRGB(100, 149, 237)
+    highlight = Color3.fromRGB(255, 255, 255)
 }
 
--- Utility functions
-local function createCorner(parent, radius)
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, radius or 4)
-    corner.Parent = parent
-    return corner
-end
-
+-- Utility Functions
 local function createHoverEffect(button, originalColor)
     local hoverColor = originalColor:Lerp(Color3.fromRGB(255, 255, 255), 0.06)
+    
     button.MouseEnter:Connect(function()
         button.BackgroundColor3 = hoverColor
     end)
+    
     button.MouseLeave:Connect(function()
         button.BackgroundColor3 = originalColor
     end)
 end
 
-local function createPadding(parent, left, top, right, bottom)
-    local padding = Instance.new("UIPadding")
-    padding.PaddingLeft = UDim.new(0, left or 10)
-    padding.PaddingTop = UDim.new(0, top or 5)
-    padding.PaddingRight = UDim.new(0, right or 10)
-    padding.PaddingBottom = UDim.new(0, bottom or 5)
-    padding.Parent = parent
-    return padding
+local function updateCheckboxAppearance(checkbox, isEnabled, theme)
+    if isEnabled then
+        checkbox.Text = "✓"
+        checkbox.TextColor3 = theme.background
+        checkbox.TextScaled = true
+        checkbox.BackgroundColor3 = theme.toggleOn
+        checkbox.BorderColor3 = theme.toggleOn
+    else
+        checkbox.Text = ""
+        checkbox.TextColor3 = theme.toggleOn
+        checkbox.BackgroundColor3 = theme.dropdown
+        checkbox.BorderColor3 = theme.accent
+    end
 end
 
--- Window Class
-function Library:CreateWindow(config)
-    local Window = {
-        tabs = {},
-        currentTab = nil
-    }
+-- Main Window Creation
+function UILibrary.new(config)
+    local self = setmetatable({}, UILibrary)
     
-    -- Remove existing GUI if it exists
-    local existingGui = Player.PlayerGui:FindFirstChild(config.Name or "UILibrary")
+    config = config or {}
+    self.title = config.title or "UI Library"
+    self.theme = config.theme or defaultTheme
+    self.size = config.size or UDim2.new(0, 400, 0, 620)
+    self.position = config.position or UDim2.new(0.5, -200, 0.5, -310)
+    self.toggleKey = config.toggleKey or Enum.KeyCode.H
+    
+    -- Check if mobile
+    self.isMobile = UserInputService.TouchEnabled
+    if self.isMobile then
+        self.size = UDim2.new(0, 340, 0, 560)
+        self.position = UDim2.new(0.5, -170, 0.5, -280)
+    end
+    
+    self.tabs = {}
+    self.currentTab = nil
+    
+    self:_createBase()
+    self:_setupDragging()
+    self:_setupToggle()
+    
+    return self
+end
+
+function UILibrary:_createBase()
+    -- Remove existing GUI
+    local existingGui = Player.PlayerGui:FindFirstChild("UILibraryGUI")
     if existingGui then
         existingGui:Destroy()
     end
     
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = config.Name or "UILibrary"
-    screenGui.ResetOnSpawn = false
-    screenGui.Parent = Player.PlayerGui
+    -- ScreenGui
+    self.screenGui = Instance.new("ScreenGui")
+    self.screenGui.Name = "UILibraryGUI"
+    self.screenGui.ResetOnSpawn = false
+    self.screenGui.Parent = Player.PlayerGui
     
-    local frame = Instance.new("Frame")
-    frame.Size = config.Size or UDim2.new(0, 400, 0, 620)
-    frame.Position = config.Position or UDim2.new(0.5, -200, 0.5, -310)
-    frame.BackgroundColor3 = theme.background
-    frame.BorderSizePixel = 0
-    frame.ClipsDescendants = true
-    frame.Parent = screenGui
+    -- Main frame
+    self.frame = Instance.new("Frame")
+    self.frame.Size = self.size
+    self.frame.Position = self.position
+    self.frame.BackgroundColor3 = self.theme.background
+    self.frame.BorderSizePixel = 0
+    self.frame.ClipsDescendants = true
+    self.frame.Parent = self.screenGui
     
-    -- Glow effect
-    local glow = Instance.new("Frame")
-    glow.Size = UDim2.new(1, 10, 1, 10)
-    glow.Position = UDim2.new(0, -5, 0, -5)
-    glow.BackgroundColor3 = theme.glow
-    glow.BackgroundTransparency = 0.8
-    glow.BorderSizePixel = 0
-    glow.ZIndex = -1
-    glow.Parent = frame
-    createCorner(glow, 6)
+    -- Glow
+    self.glow = Instance.new("Frame")
+    self.glow.Size = UDim2.new(1, 10, 1, 10)
+    self.glow.Position = UDim2.new(0, -5, 0, -5)
+    self.glow.BackgroundColor3 = self.theme.glow
+    self.glow.BackgroundTransparency = 0.8
+    self.glow.BorderSizePixel = 0
+    self.glow.ZIndex = -1
+    self.glow.Parent = self.frame
+    
+    local glowCorner = Instance.new("UICorner")
+    glowCorner.CornerRadius = UDim.new(0, 6)
+    glowCorner.Parent = self.glow
     
     -- Inner border
-    local innerBorder = Instance.new("Frame")
-    innerBorder.Size = UDim2.new(1, -4, 1, -4)
-    innerBorder.Position = UDim2.new(0, 2, 0, 2)
-    innerBorder.BackgroundColor3 = theme.surface
-    innerBorder.BorderSizePixel = 0
-    innerBorder.Parent = frame
-    createCorner(innerBorder, 4)
+    self.innerBorder = Instance.new("Frame")
+    self.innerBorder.Size = UDim2.new(1, -4, 1, -4)
+    self.innerBorder.Position = UDim2.new(0, 2, 0, 2)
+    self.innerBorder.BackgroundColor3 = self.theme.surface
+    self.innerBorder.BorderSizePixel = 0
+    self.innerBorder.Parent = self.frame
     
-    -- Add dragging (to title bar, which we'll create below)
-    local dragging, dragInput, dragStart, startPos
+    local frameCorner = Instance.new("UICorner")
+    frameCorner.CornerRadius = UDim.new(0, 4)
+    frameCorner.Parent = self.innerBorder
     
     -- Title bar
-    local titleBar = Instance.new("Frame")
-    titleBar.Size = UDim2.new(1, 0, 0, 35)
-    titleBar.BackgroundColor3 = theme.surface
-    titleBar.BorderSizePixel = 0
-    titleBar.Active = true
-    titleBar.Parent = innerBorder
+    self.titleBar = Instance.new("Frame")
+    self.titleBar.Size = UDim2.new(1, 0, 0, 35)
+    self.titleBar.Position = UDim2.new(0, 0, 0, 0)
+    self.titleBar.BackgroundColor3 = self.theme.surface
+    self.titleBar.BorderSizePixel = 0
+    self.titleBar.Parent = self.innerBorder
     
-    -- Dragging logic on title bar
-    titleBar.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+    -- Title text
+    self.titleLabel = Instance.new("TextLabel")
+    self.titleLabel.Size = UDim2.new(1, -40, 1, 0)
+    self.titleLabel.Position = UDim2.new(0, 10, 0, 0)
+    self.titleLabel.BackgroundTransparency = 1
+    self.titleLabel.Text = self.title
+    self.titleLabel.TextColor3 = self.theme.accent
+    self.titleLabel.Font = Enum.Font.Code
+    self.titleLabel.TextSize = 14
+    self.titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    self.titleLabel.TextStrokeTransparency = 0.8
+    self.titleLabel.TextStrokeColor3 = self.theme.glow
+    self.titleLabel.Parent = self.titleBar
+    
+    -- Status light
+    self.statusLight = Instance.new("Frame")
+    self.statusLight.Size = UDim2.new(0, 8, 0, 8)
+    self.statusLight.Position = UDim2.new(1, -15, 0.5, -4)
+    self.statusLight.BackgroundColor3 = self.theme.accent2
+    self.statusLight.BorderSizePixel = 0
+    self.statusLight.Parent = self.titleBar
+    
+    -- Tabs row
+    self.tabsRow = Instance.new("ScrollingFrame")
+    self.tabsRow.Size = UDim2.new(1, 0, 0, 30)
+    self.tabsRow.Position = UDim2.new(0, 0, 0, 35)
+    self.tabsRow.BackgroundTransparency = 1
+    self.tabsRow.ScrollBarThickness = 0
+    self.tabsRow.CanvasSize = UDim2.new(0, 0, 0, 30)
+    self.tabsRow.ScrollingDirection = Enum.ScrollingDirection.X
+    self.tabsRow.Parent = self.innerBorder
+    
+    -- Active indicator
+    self.activeIndicator = Instance.new("Frame")
+    self.activeIndicator.Name = "ActiveIndicator"
+    self.activeIndicator.Size = UDim2.new(0, 83, 0, 3)
+    self.activeIndicator.Position = UDim2.new(0, 6, 1, -3)
+    self.activeIndicator.BackgroundColor3 = self.theme.accent2
+    self.activeIndicator.BorderSizePixel = 0
+    self.activeIndicator.ZIndex = 100
+    self.activeIndicator.Parent = self.tabsRow
+    
+    local indicatorCorner = Instance.new("UICorner")
+    indicatorCorner.CornerRadius = UDim.new(0, 2)
+    indicatorCorner.Parent = self.activeIndicator
+end
+
+function UILibrary:_setupDragging()
+    local dragging = false
+    local dragInput = nil
+    local dragStart = nil
+    local startPos = nil
+    
+    local function update(input)
+        local delta = input.Position - dragStart
+        self.frame.Position = UDim2.new(
+            startPos.X.Scale, startPos.X.Offset + delta.X,
+            startPos.Y.Scale, startPos.Y.Offset + delta.Y
+        )
+    end
+    
+    self.titleBar.Active = true
+    
+    self.titleBar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or 
+           input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
             dragStart = input.Position
-            startPos = frame.Position
+            startPos = self.frame.Position
             dragInput = input
             
             input.Changed:Connect(function()
@@ -130,8 +233,9 @@ function Library:CreateWindow(config)
         end
     end)
     
-    titleBar.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+    self.titleBar.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or 
+           input.UserInputType == Enum.UserInputType.Touch then
             dragInput = input
         end
     end)
@@ -139,561 +243,760 @@ function Library:CreateWindow(config)
     UserInputService.InputChanged:Connect(function(input)
         if not dragging then return end
         if input == dragInput then
-            local delta = input.Position - dragStart
-            frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-        elseif input.UserInputType == Enum.UserInputType.Touch then
-            local delta = input.Position - dragStart
-            frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+            update(input)
+            return
+        end
+        if input.UserInputType == Enum.UserInputType.Touch then
+            update(input)
         end
     end)
-    
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, -40, 1, 0)
-    title.Position = UDim2.new(0, 10, 0, 0)
-    title.BackgroundTransparency = 1
-    title.Text = config.Title or "UI Library"
-    title.TextColor3 = theme.accent
-    title.Font = Enum.Font.Code
-    title.TextSize = 14
-    title.TextXAlignment = Enum.TextXAlignment.Left
-    title.TextStrokeTransparency = 0.8
-    title.TextStrokeColor3 = theme.glow
-    title.Parent = titleBar
-    
-    -- Status light
-    local statusLight = Instance.new("Frame")
-    statusLight.Size = UDim2.new(0, 8, 0, 8)
-    statusLight.Position = UDim2.new(1, -15, 0.5, -4)
-    statusLight.BackgroundColor3 = theme.accent2
-    statusLight.BorderSizePixel = 0
-    statusLight.Parent = titleBar
-    createCorner(statusLight, 4)
-    
-    -- Tabs container
-    local tabsRow = Instance.new("ScrollingFrame")
-    tabsRow.Size = UDim2.new(1, 0, 0, 30)
-    tabsRow.Position = UDim2.new(0, 0, 0, 35)
-    tabsRow.BackgroundTransparency = 1
-    tabsRow.ScrollBarThickness = 0
-    tabsRow.CanvasSize = UDim2.new(0, 0, 0, 30)
-    tabsRow.ScrollingDirection = Enum.ScrollingDirection.X
-    tabsRow.Parent = innerBorder
-    
-    Window.frame = frame
-    Window.innerBorder = innerBorder
-    Window.tabsRow = tabsRow
-    Window.screenGui = screenGui
-    Window.statusLight = statusLight
-    
-    -- Status light animation
-    task.spawn(function()
-        while screenGui.Parent do
-            for i = 1, 10 do
-                statusLight.BackgroundTransparency = 0.3 + (i/10) * 0.4
-                task.wait(0.1)
-            end
-            for i = 1, 10 do
-                statusLight.BackgroundTransparency = 0.7 - (i/10) * 0.4
-                task.wait(0.1)
-            end
-        end
-    end)
-    
-    function Window:CreateTab(name)
-        local Tab = {
-            name = name,
-            sections = {},
-            button = nil,
-            content = nil
-        }
-        
-        -- Tab button
-        local tabButton = Instance.new("TextButton")
-        tabButton.Size = UDim2.new(0, 95, 1, -6)
-        tabButton.Position = UDim2.new(0, #self.tabs * 101 + 6, 0, 3)
-        tabButton.BackgroundColor3 = #self.tabs == 0 and theme.surface or theme.dropdown
-        tabButton.BorderSizePixel = 0
-        tabButton.Text = name
-        tabButton.TextColor3 = #self.tabs == 0 and theme.accent2 or theme.text
-        tabButton.Font = Enum.Font.Code
-        tabButton.TextSize = 12
-        tabButton.Parent = self.tabsRow
-        createCorner(tabButton, 6)
-        createHoverEffect(tabButton, tabButton.BackgroundColor3)
-        
-        -- Tab content
-        local content = Instance.new("ScrollingFrame")
-        content.Size = UDim2.new(1, -20, 1, -90)
-        content.Position = UDim2.new(0, 10, 0, 75)
-        content.BackgroundTransparency = 1
-        content.ScrollBarThickness = 0
-        content.Visible = #self.tabs == 0
-        content.Parent = self.innerBorder
-        
-        local layout = Instance.new("UIListLayout")
-        layout.SortOrder = Enum.SortOrder.LayoutOrder
-        layout.Padding = UDim.new(0, 6)
-        layout.Parent = content
-        
-        layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-            content.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 18)
-        end)
-        
-        Tab.button = tabButton
-        Tab.content = content
-        
-        -- Tab switching
-        tabButton.MouseButton1Click:Connect(function()
-            for _, t in pairs(self.tabs) do
-                t.content.Visible = false
-                t.button.BackgroundColor3 = theme.dropdown
-                t.button.TextColor3 = theme.text
-            end
-            content.Visible = true
-            tabButton.BackgroundColor3 = theme.surface
-            tabButton.TextColor3 = theme.accent2
-            self.currentTab = Tab
-        end)
-        
-        function Tab:CreateSection(title)
-            local Section = {
-                elements = {},
-                layoutOrder = #self.sections
-            }
-            
-            local label = Instance.new("TextLabel")
-            label.Size = UDim2.new(1, 0, 0, 20)
-            label.BackgroundTransparency = 1
-            label.Text = title
-            label.TextColor3 = theme.text
-            label.Font = Enum.Font.Code
-            label.TextSize = 12
-            label.TextXAlignment = Enum.TextXAlignment.Left
-            label.LayoutOrder = Section.layoutOrder * 100
-            label.Parent = self.content
-            
-            Section.label = label
-            Section.parent = self.content
-            Section.layoutOrder = #self.sections
-            
-            function Section:CreateButton(text, callback)
-                local button = Instance.new("TextButton")
-                button.Size = UDim2.new(1, 0, 0, 40)
-                button.BackgroundColor3 = theme.surface
-                button.BorderColor3 = theme.accent
-                button.BorderSizePixel = 2
-                button.Text = text
-                button.TextColor3 = theme.text
-                button.Font = Enum.Font.Code
-                button.TextSize = 12
-                button.LayoutOrder = self.layoutOrder * 100 + #self.elements + 1
-                button.Parent = self.parent
-                createCorner(button, 4)
-                createHoverEffect(button, theme.surface)
-                
-                button.MouseButton1Click:Connect(callback)
-                
-                table.insert(self.elements, button)
-                return button
-            end
-            
-            function Section:CreateToggle(text, default, callback)
-                local row = Instance.new("Frame")
-                row.Size = UDim2.new(1, 0, 0, 30)
-                row.BackgroundTransparency = 1
-                row.LayoutOrder = self.layoutOrder * 100 + #self.elements + 1
-                row.Parent = self.parent
-                
-                local checkbox = Instance.new("TextButton")
-                checkbox.Size = UDim2.new(0, 24, 0, 24)
-                checkbox.Position = UDim2.new(0, 4, 0, 3)
-                checkbox.BackgroundColor3 = default and theme.toggleOn or theme.dropdown
-                checkbox.BorderColor3 = theme.accent
-                checkbox.BorderSizePixel = 1
-                checkbox.Text = default and "✓" or ""
-                checkbox.TextColor3 = theme.background
-                checkbox.Font = Enum.Font.Code
-                checkbox.TextSize = 16
-                checkbox.TextScaled = true
-                checkbox.Parent = row
-                createCorner(checkbox, 4)
-                
-                local label = Instance.new("TextLabel")
-                label.Size = UDim2.new(1, -32, 1, 0)
-                label.Position = UDim2.new(0, 32, 0, 0)
-                label.BackgroundTransparency = 1
-                label.Text = text
-                label.TextColor3 = theme.text
-                label.Font = Enum.Font.Code
-                label.TextSize = 12
-                label.TextXAlignment = Enum.TextXAlignment.Left
-                label.Parent = row
-                
-                local toggled = default
-                checkbox.MouseButton1Click:Connect(function()
-                    toggled = not toggled
-                    checkbox.BackgroundColor3 = toggled and theme.toggleOn or theme.dropdown
-                    checkbox.Text = toggled and "✓" or ""
-                    callback(toggled)
-                end)
-                
-                table.insert(self.elements, row)
-                return checkbox
-            end
-            
-            function Section:CreateLabel(text)
-                local label = Instance.new("TextLabel")
-                label.Size = UDim2.new(1, 0, 0, 20)
-                label.BackgroundTransparency = 1
-                label.Text = text
-                label.TextColor3 = theme.text
-                label.Font = Enum.Font.Code
-                label.TextSize = 10
-                label.TextXAlignment = Enum.TextXAlignment.Left
-                label.LayoutOrder = self.layoutOrder * 100 + #self.elements + 1
-                label.Parent = self.parent
-                
-                table.insert(self.elements, label)
-                return label
-            end
-            
-            function Section:CreateTextBox(placeholder, callback)
-                local textbox = Instance.new("TextBox")
-                textbox.Size = UDim2.new(1, 0, 0, 35)
-                textbox.BackgroundColor3 = theme.dropdown
-                textbox.BorderColor3 = theme.accent
-                textbox.BorderSizePixel = 1
-                textbox.PlaceholderText = placeholder
-                textbox.Text = ""
-                textbox.TextColor3 = theme.text
-                textbox.Font = Enum.Font.Code
-                textbox.TextSize = 12
-                textbox.TextXAlignment = Enum.TextXAlignment.Left
-                textbox.LayoutOrder = self.layoutOrder * 100 + #self.elements + 1
-                textbox.Parent = self.parent
-                createCorner(textbox, 4)
-                
-                createPadding(textbox, 10, 0, 10, 0)
-                
-                textbox.Focused:Connect(function()
-                    textbox.BorderColor3 = theme.accent2
-                end)
-                
-                textbox.FocusLost:Connect(function()
-                    textbox.BorderColor3 = theme.accent
-                    callback(textbox.Text)
-                end)
-                
-                table.insert(self.elements, textbox)
-                return textbox
-            end
-            
--- NEW: Status Display Box (FIXED)
-function Section:CreateStatusDisplay(config)
-    local statusBox = Instance.new("TextLabel")
-    statusBox.Size = UDim2.new(1, 0, 0, config.Height or 80)
-    statusBox.BackgroundColor3 = theme.dropdown
-    statusBox.BorderColor3 = config.BorderColor or theme.accent
-    statusBox.BorderSizePixel = 1
-    statusBox.Text = config.DefaultText or "Status: Idle"
-    statusBox.TextColor3 = theme.text
-    statusBox.Font = Enum.Font.Code
-    statusBox.TextSize = config.TextSize or 11
-    statusBox.TextYAlignment = Enum.TextYAlignment.Top
-    statusBox.TextXAlignment = Enum.TextXAlignment.Left
-    statusBox.LayoutOrder = self.layoutOrder * 100 + #self.elements + 1
-    statusBox.Parent = self.parent
-    createCorner(statusBox, 4)
-    
-    createPadding(statusBox, 10, 5, 10, 5)
-    
-    -- Store reference for updates
-    table.insert(self.elements, statusBox)
-    return statusBox
 end
 
--- NEW: Info Box (FIXED)
-function Section:CreateInfoBox(config)
-    local container = Instance.new("Frame")
-    container.Size = UDim2.new(1, 0, 0, (config.Height or 80) + 20)
-    container.BackgroundTransparency = 1
-    container.LayoutOrder = self.layoutOrder * 100 + #self.elements + 1
-    container.Parent = self.parent
-    
-    local titleLabel = Instance.new("TextLabel")
-    titleLabel.Size = UDim2.new(1, 0, 0, 20)
-    titleLabel.BackgroundTransparency = 1
-    titleLabel.Text = config.Title or "INFO"
-    titleLabel.TextColor3 = theme.text
-    titleLabel.Font = Enum.Font.Code
-    titleLabel.TextSize = 12
-    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-    titleLabel.Parent = container
-    
-    local infoBox = Instance.new("TextLabel")
-    infoBox.Size = UDim2.new(1, 0, 1, -20)
-    infoBox.Position = UDim2.new(0, 0, 0, 20)
-    infoBox.BackgroundColor3 = theme.dropdown
-    infoBox.BorderColor3 = config.BorderColor or theme.accent
-    infoBox.BorderSizePixel = 1
-    infoBox.Text = config.DefaultText or "No data"
-    infoBox.TextColor3 = theme.text
-    infoBox.Font = Enum.Font.Code
-    infoBox.TextSize = config.TextSize or 10
-    infoBox.TextYAlignment = Enum.TextYAlignment.Top
-    infoBox.TextXAlignment = Enum.TextXAlignment.Left
-    infoBox.Parent = container
-    createCorner(infoBox, 4)
-    
-    createPadding(infoBox, 10, 5, 10, 5)
-    
-    table.insert(self.elements, container)
-    return infoBox
-end
-            
-            -- NEW: Slider
-            function Section:CreateSlider(config)
-                local sliderContainer = Instance.new("Frame")
-                sliderContainer.Size = UDim2.new(1, 0, 0, 60)
-                sliderContainer.BackgroundTransparency = 1
-                sliderContainer.LayoutOrder = self.layoutOrder * 100 + #self.elements + 1
-                sliderContainer.Parent = self.parent
-                
-                local sliderLabel = Instance.new("TextLabel")
-                sliderLabel.Size = UDim2.new(1, 0, 0, 20)
-                sliderLabel.BackgroundTransparency = 1
-                sliderLabel.Text = config.Name or "SLIDER"
-                sliderLabel.TextColor3 = theme.text
-                sliderLabel.Font = Enum.Font.Code
-                sliderLabel.TextSize = 11
-                sliderLabel.TextXAlignment = Enum.TextXAlignment.Left
-                sliderLabel.Parent = sliderContainer
-                
-                local sliderBg = Instance.new("Frame")
-                sliderBg.Size = UDim2.new(1, 0, 0, 20)
-                sliderBg.Position = UDim2.new(0, 0, 0, 25)
-                sliderBg.BackgroundColor3 = theme.slider
-                sliderBg.BorderSizePixel = 0
-                sliderBg.Parent = sliderContainer
-                createCorner(sliderBg, 4)
-                
-                local sliderFill = Instance.new("Frame")
-                sliderFill.Size = UDim2.new(config.Default or 0.5, 0, 1, 0)
-                sliderFill.BackgroundColor3 = theme.sliderFill
-                sliderFill.BorderSizePixel = 0
-                sliderFill.Parent = sliderBg
-                createCorner(sliderFill, 4)
-                
-                local sliderButton = Instance.new("TextButton")
-                sliderButton.Size = UDim2.new(1, 0, 1, 0)
-                sliderButton.Active = true
-                sliderButton.BackgroundTransparency = 1
-                sliderButton.Text = ""
-                sliderButton.Parent = sliderBg
-                
-                local valueLabel = Instance.new("TextLabel")
-                valueLabel.Size = UDim2.new(1, 0, 0, 15)
-                valueLabel.Position = UDim2.new(0, 0, 1, 5)
-                valueLabel.BackgroundTransparency = 1
-                valueLabel.Text = tostring(math.floor((config.Default or 0.5) * (config.Max or 100)))
-                valueLabel.TextColor3 = theme.accent2
-                valueLabel.Font = Enum.Font.Code
-                valueLabel.TextSize = 10
-                valueLabel.TextXAlignment = Enum.TextXAlignment.Center
-                valueLabel.Parent = sliderContainer
-                
-                local dragging = false
-                
-                local function updateSlider(input)
-                    local mousePos = input.Position.X
-                    local sliderPos = sliderBg.AbsolutePosition.X
-                    local sliderSize = sliderBg.AbsoluteSize.X
-                    local percentage = math.clamp((mousePos - sliderPos) / sliderSize, 0, 1)
-                    
-                    sliderFill.Size = UDim2.new(percentage, 0, 1, 0)
-                    
-                    local value = math.floor(percentage * (config.Max or 100))
-                    valueLabel.Text = tostring(value)
-                    sliderLabel.Text = config.Name .. ": " .. tostring(value)
-                    
-                    if config.Callback then
-                        config.Callback(value, percentage)
-                    end
-                end
-                
-                sliderButton.InputBegan:Connect(function(input)
-                    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                        dragging = true
-                        updateSlider(input)
-                    end
-                end)
-                
-                UserInputService.InputChanged:Connect(function(input)
-                    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-                        updateSlider(input)
-                    end
-                end)
-                
-                UserInputService.InputEnded:Connect(function(input)
-                    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                        dragging = false
-                    end
-                end)
-                
-                table.insert(self.elements, sliderContainer)
-                return sliderBg
-            end
-            
-            -- NEW: Dropdown
-            function Section:CreateDropdown(config)
-                local dropdownContainer = Instance.new("Frame")
-                dropdownContainer.Size = UDim2.new(1, 0, 0, 26)
-                dropdownContainer.BackgroundTransparency = 1
-                dropdownContainer.LayoutOrder = self.layoutOrder * 100 + #self.elements + 1
-                dropdownContainer.Parent = self.parent
-                
-                local dropdownButton = Instance.new("TextButton")
-                dropdownButton.Size = UDim2.new(1, 0, 1, 0)
-                dropdownButton.BackgroundColor3 = theme.dropdown
-                dropdownButton.BorderColor3 = theme.accent
-                dropdownButton.BorderSizePixel = 1
-                dropdownButton.Text = config.Default or config.Options[1] or "Select"
-                dropdownButton.TextColor3 = theme.text
-                dropdownButton.Font = Enum.Font.Code
-                dropdownButton.TextSize = 12
-                dropdownButton.Parent = dropdownContainer
-                createCorner(dropdownButton, 4)
-                
-                local dropdownMenu = Instance.new("Frame")
-                dropdownMenu.Size = UDim2.new(1, 0, 0, 0)
-                dropdownMenu.Position = UDim2.new(0, 0, 1, 4)
-                dropdownMenu.BackgroundColor3 = theme.surface
-                dropdownMenu.BorderColor3 = theme.accent2
-                dropdownMenu.BorderSizePixel = 1
-                dropdownMenu.Visible = false
-                dropdownMenu.ZIndex = 10
-                dropdownMenu.Parent = dropdownContainer
-                createCorner(dropdownMenu, 4)
-                
-                local menuLayout = Instance.new("UIListLayout")
-                menuLayout.Padding = UDim.new(0, 4)
-                menuLayout.Parent = dropdownMenu
-                
-                menuLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-                    dropdownMenu.Size = UDim2.new(1, 0, 0, menuLayout.AbsoluteContentSize.Y + 8)
-                end)
-                
-                for _, option in ipairs(config.Options or {}) do
-                    local optionButton = Instance.new("TextButton")
-                    optionButton.Size = UDim2.new(1, -10, 0, 24)
-                    optionButton.Position = UDim2.new(0, 5, 0, 0)
-                    optionButton.BackgroundColor3 = theme.surface
-                    optionButton.BorderSizePixel = 0
-                    optionButton.Text = option
-                    optionButton.TextColor3 = theme.text
-                    optionButton.Font = Enum.Font.Code
-                    optionButton.TextSize = 12
-                    optionButton.Parent = dropdownMenu
-                    
-                    createHoverEffect(optionButton, theme.surface)
-                    
-                    optionButton.MouseButton1Click:Connect(function()
-                        dropdownButton.Text = option
-                        dropdownMenu.Visible = false
-                        if config.Callback then
-                            config.Callback(option)
-                        end
-                    end)
-                end
-                
-                dropdownButton.MouseButton1Click:Connect(function()
-                    dropdownMenu.Visible = not dropdownMenu.Visible
-                end)
-                
-                table.insert(self.elements, dropdownContainer)
-                return dropdownButton
-            end
-            
-            -- NEW: Divider
-            function Section:CreateDivider()
-                local divider = Instance.new("Frame")
-                divider.Size = UDim2.new(1, -20, 0, 2)
-                divider.Position = UDim2.new(0, 10, 0, 0)
-                divider.BackgroundColor3 = theme.accent2
-                divider.BorderSizePixel = 0
-                divider.LayoutOrder = self.layoutOrder * 100 + #self.elements + 1
-                divider.Parent = self.parent
-                createCorner(divider, 1)
-                
-                table.insert(self.elements, divider)
-                return divider
-            end
-            
-            -- NEW: Two buttons side by side
-            function Section:CreateButtonPair(config)
-                local buttonRow = Instance.new("Frame")
-                buttonRow.Size = UDim2.new(1, 0, 0, 36)
-                buttonRow.BackgroundTransparency = 1
-                buttonRow.LayoutOrder = self.layoutOrder * 100 + #self.elements + 1
-                buttonRow.Parent = self.parent
-                
-                local button1 = Instance.new("TextButton")
-                button1.Size = UDim2.new(0.48, 0, 1, 0)
-                button1.Position = UDim2.new(0, 0, 0, 0)
-                button1.BackgroundColor3 = theme.surface
-                button1.BorderColor3 = config.Button1Color or theme.toggleOff
-                button1.BorderSizePixel = 2
-                button1.Text = config.Button1Text or "Button 1"
-                button1.TextColor3 = config.Button1Color or theme.toggleOff
-                button1.Font = Enum.Font.Code
-                button1.TextSize = 11
-                button1.Parent = buttonRow
-                createCorner(button1, 4)
-                createHoverEffect(button1, theme.surface)
-                
-                local button2 = Instance.new("TextButton")
-                button2.Size = UDim2.new(0.48, 0, 1, 0)
-                button2.Position = UDim2.new(0.52, 0, 0, 0)
-                button2.BackgroundColor3 = theme.surface
-                button2.BorderColor3 = config.Button2Color or theme.accent2
-                button2.BorderSizePixel = 2
-                button2.Text = config.Button2Text or "Button 2"
-                button2.TextColor3 = config.Button2Color or theme.accent2
-                button2.Font = Enum.Font.Code
-                button2.TextSize = 11
-                button2.Parent = buttonRow
-                createCorner(button2, 4)
-                createHoverEffect(button2, theme.surface)
-                
-                button1.MouseButton1Click:Connect(function()
-                    if config.Button1Callback then
-                        config.Button1Callback()
-                    end
-                end)
-                
-                button2.MouseButton1Click:Connect(function()
-                    if config.Button2Callback then
-                        config.Button2Callback()
-                    end
-                end)
-                
-                table.insert(self.elements, buttonRow)
-                return {Button1 = button1, Button2 = button2}
-            end
-            
-            table.insert(self.sections, Section)
-            return Section
+function UILibrary:_setupToggle()
+    UserInputService.InputBegan:Connect(function(input, gameProcessedEvent)
+        if gameProcessedEvent then return end
+        if UserInputService:GetFocusedTextBox() then return end
+        if input.UserInputType == Enum.UserInputType.Keyboard and 
+           input.KeyCode == self.toggleKey then
+            self.screenGui.Enabled = not self.screenGui.Enabled
         end
-        
-        table.insert(self.tabs, Tab)
-        
-        -- Update canvas size
-        self.tabsRow.CanvasSize = UDim2.new(0, #self.tabs * 101 + 12, 0, 30)
-        
-        return Tab
+    end)
+end
+
+function UILibrary:_moveIndicatorTo(button, instant)
+    local firstTabPos = self.tabs[1] and self.tabs[1].button.Position.X.Offset or 0
+    local targetX = button.Position.X.Offset - firstTabPos
+    local targetW = button.Size.X.Offset - 12
+    
+    local targetPos = UDim2.new(0, targetX + 6, 1, -3)
+    local targetSize = UDim2.new(0, targetW, 0, 3)
+    
+    if instant then
+        self.activeIndicator.Position = targetPos
+        self.activeIndicator.Size = targetSize
+        return
     end
     
-    return Window
+    local info = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    local t1 = TweenService:Create(self.activeIndicator, info, {Position = targetPos})
+    local t2 = TweenService:Create(self.activeIndicator, info, {Size = targetSize})
+    t1:Play()
+    t2:Play()
 end
 
-return Library
+-- Tab Creation
+function UILibrary:addTab(name)
+    local tab = {}
+    tab.name = name
+    tab.elements = {}
+    
+    -- Create tab button
+    local tabIndex = #self.tabs + 1
+    local xPos = 6 + (tabIndex - 1) * 101
+    
+    tab.button = Instance.new("TextButton")
+    tab.button.Size = UDim2.new(0, 95, 1, -6)
+    tab.button.Position = UDim2.new(0, xPos, 0, 3)
+    tab.button.BackgroundColor3 = self.theme.dropdown
+    tab.button.BorderSizePixel = 0
+    tab.button.Text = name
+    tab.button.TextColor3 = self.theme.text
+    tab.button.Font = Enum.Font.Code
+    tab.button.TextSize = 12
+    tab.button.Parent = self.tabsRow
+    
+    local tabCorner = Instance.new("UICorner")
+    tabCorner.CornerRadius = UDim.new(0, 6)
+    tabCorner.Parent = tab.button
+    
+    -- Create content frame
+    tab.content = Instance.new("ScrollingFrame")
+    tab.content.Size = UDim2.new(1, -20, 1, -60)
+    tab.content.Position = UDim2.new(0, 10, 0, 70)
+    tab.content.BackgroundTransparency = 1
+    tab.content.ScrollBarThickness = 0
+    tab.content.Parent = self.innerBorder
+    tab.content.Visible = false
+    
+    -- Layout
+    tab.layout = Instance.new("UIListLayout")
+    tab.layout.SortOrder = Enum.SortOrder.LayoutOrder
+    tab.layout.Padding = UDim.new(0, 6)
+    tab.layout.Parent = tab.content
+    
+    -- Auto-resize canvas
+    tab.content.CanvasSize = UDim2.new(0, 0, 0, 10)
+    tab.layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        local h = tab.layout.AbsoluteContentSize.Y + 18
+        tab.content.CanvasSize = UDim2.new(0, 0, 0, math.max(h, 200))
+    end)
+    
+    -- Button click handler
+    tab.button.MouseButton1Click:Connect(function()
+        self:_selectTab(tab)
+    end)
+    
+    -- Update canvas size for tabs
+    self.tabsRow.CanvasSize = UDim2.new(0, xPos + 100, 0, 30)
+    
+    table.insert(self.tabs, tab)
+    
+    -- Select first tab
+    if #self.tabs == 1 then
+        self:_selectTab(tab)
+    end
+    
+    return setmetatable(tab, {__index = self})
+end
+
+function UILibrary:_selectTab(tab)
+    -- Hide all tabs
+    for _, t in ipairs(self.tabs) do
+        t.content.Visible = false
+        t.button.BackgroundColor3 = self.theme.dropdown
+        t.button.TextColor3 = self.theme.text
+    end
+    
+    -- Show selected tab
+    tab.content.Visible = true
+    tab.button.BackgroundColor3 = self.theme.surface
+    tab.button.TextColor3 = self.theme.accent2
+    
+    self.currentTab = tab
+    self:_moveIndicatorTo(tab.button)
+end
+
+-- Button
+function UILibrary:addButton(config)
+    config = config or {}
+    local text = config.text or "Button"
+    local callback = config.callback or function() end
+    
+    local button = Instance.new("TextButton")
+    button.Size = UDim2.new(1, 0, 0, config.height or 40)
+    button.BackgroundColor3 = self.theme.surface
+    button.BorderColor3 = config.borderColor or self.theme.accent2
+    button.BorderSizePixel = 2
+    button.Text = text
+    button.TextColor3 = config.textColor or self.theme.accent2
+    button.Font = Enum.Font.Code
+    button.TextSize = config.textSize or 12
+    button.LayoutOrder = config.layoutOrder or (#self.elements + 1)
+    button.Parent = self.content
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 4)
+    corner.Parent = button
+    
+    createHoverEffect(button, self.theme.surface)
+    
+    button.MouseButton1Click:Connect(callback)
+    
+    table.insert(self.elements, {type = "button", element = button})
+    return button
+end
+
+-- Toggle Button
+function UILibrary:addToggle(config)
+    config = config or {}
+    local text = config.text or "Toggle"
+    local default = config.default or false
+    local callback = config.callback or function() end
+    
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1, 0, 0, config.height or 30)
+    row.BackgroundTransparency = 1
+    row.LayoutOrder = config.layoutOrder or (#self.elements + 1)
+    row.Parent = self.content
+    
+    local checkbox = Instance.new("TextButton")
+    checkbox.Size = UDim2.new(0, 24, 0, 24)
+    checkbox.Position = UDim2.new(0, 4, 0, 3)
+    checkbox.BackgroundColor3 = self.theme.dropdown
+    checkbox.BorderColor3 = self.theme.accent
+    checkbox.BorderSizePixel = 1
+    checkbox.Text = ""
+    checkbox.Font = Enum.Font.Code
+    checkbox.TextSize = 16
+    checkbox.TextScaled = true
+    checkbox.TextColor3 = self.theme.toggleOn
+    checkbox.Parent = row
+    
+    local checkCorner = Instance.new("UICorner")
+    checkCorner.CornerRadius = UDim.new(0, 4)
+    checkCorner.Parent = checkbox
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -32, 1, 0)
+    label.Position = UDim2.new(0, 32, 0, 0)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = self.theme.text
+    label.Font = Enum.Font.Code
+    label.TextSize = 12
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = row
+    
+    local state = default
+    updateCheckboxAppearance(checkbox, state, self.theme)
+    
+    checkbox.MouseButton1Click:Connect(function()
+        state = not state
+        updateCheckboxAppearance(checkbox, state, self.theme)
+        callback(state)
+    end)
+    
+    createHoverEffect(checkbox, checkbox.BackgroundColor3)
+    
+    table.insert(self.elements, {type = "toggle", element = row, checkbox = checkbox})
+    return {
+        setState = function(newState)
+            state = newState
+            updateCheckboxAppearance(checkbox, state, self.theme)
+        end,
+        getState = function()
+            return state
+        end
+    }
+end
+
+-- Type-Switching Button (like pokeball -> greatball)
+function UILibrary:addTypeSwitcher(config)
+    config = config or {}
+    local types = config.types or {"Option 1", "Option 2"}
+    local default = config.default or 1
+    local callback = config.callback or function() end
+    
+    local currentIndex = default
+    
+    local button = Instance.new("TextButton")
+    button.Size = UDim2.new(1, 0, 0, config.height or 40)
+    button.BackgroundColor3 = self.theme.surface
+    button.BorderColor3 = self.theme.accent2
+    button.BorderSizePixel = 2
+    button.Text = types[currentIndex]
+    button.TextColor3 = self.theme.accent2
+    button.Font = Enum.Font.Code
+    button.TextSize = 12
+    button.LayoutOrder = config.layoutOrder or (#self.elements + 1)
+    button.Parent = self.content
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 4)
+    corner.Parent = button
+    
+    createHoverEffect(button, self.theme.surface)
+    
+    button.MouseButton1Click:Connect(function()
+        currentIndex = (currentIndex % #types) + 1
+        button.Text = types[currentIndex]
+        callback(types[currentIndex], currentIndex)
+    end)
+    
+    table.insert(self.elements, {type = "typeswitcher", element = button})
+    return {
+        setType = function(index)
+            currentIndex = index
+            button.Text = types[currentIndex]
+        end,
+        getCurrentType = function()
+            return types[currentIndex], currentIndex
+        end
+    }
+end
+
+-- Label
+function UILibrary:addLabel(config)
+    config = config or {}
+    local text = config.text or "Label"
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, 0, 0, config.height or 20)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = config.textColor or self.theme.text
+    label.Font = Enum.Font.Code
+    label.TextSize = config.textSize or 12
+    label.TextXAlignment = config.alignment or Enum.TextXAlignment.Left
+    label.LayoutOrder = config.layoutOrder or (#self.elements + 1)
+    label.Parent = self.content
+    
+    table.insert(self.elements, {type = "label", element = label})
+    return {
+        setText = function(newText)
+            label.Text = newText
+        end
+    }
+end
+
+-- Info Container
+function UILibrary:addInfoContainer(config)
+    config = config or {}
+    local text = config.text or "Info"
+    local infoColor = config.infoColor or self.theme.dropdown
+    
+    local container = Instance.new("TextLabel")
+    container.Size = UDim2.new(1, 0, 0, config.height or 80)
+    container.BackgroundColor3 = infoColor
+    container.BorderColor3 = config.borderColor or self.theme.accent
+    container.BorderSizePixel = 1
+    container.Text = text
+    container.TextColor3 = config.textColor or self.theme.text
+    container.Font = Enum.Font.Code
+    container.TextSize = config.textSize or 10
+    container.TextYAlignment = Enum.TextYAlignment.Top
+    container.TextXAlignment = Enum.TextXAlignment.Left
+    container.LayoutOrder = config.layoutOrder or (#self.elements + 1)
+    container.Parent = self.content
+    
+    local padding = Instance.new("UIPadding")
+    padding.PaddingLeft = UDim.new(0, 10)
+    padding.PaddingTop = UDim.new(0, 5)
+    padding.Parent = container
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 4)
+    corner.Parent = container
+    
+    table.insert(self.elements, {type = "infocontainer", element = container})
+    return {
+        setText = function(newText)
+            container.Text = newText
+        end,
+        setColor = function(newColor)
+            container.BackgroundColor3 = newColor
+        end
+    }
+end
+
+-- Textbox
+function UILibrary:addTextbox(config)
+    config = config or {}
+    local placeholder = config.placeholder or "Enter text..."
+    local default = config.default or ""
+    local callback = config.callback or function() end
+    
+    local textbox = Instance.new("TextBox")
+    textbox.Size = UDim2.new(1, 0, 0, config.height or 35)
+    textbox.BackgroundColor3 = self.theme.dropdown
+    textbox.BorderColor3 = self.theme.accent
+    textbox.BorderSizePixel = 1
+    textbox.PlaceholderText = placeholder
+    textbox.Text = default
+    textbox.TextColor3 = self.theme.text
+    textbox.Font = Enum.Font.Code
+    textbox.TextSize = 12
+    textbox.TextXAlignment = Enum.TextXAlignment.Left
+    textbox.ClearTextOnFocus = config.clearOnFocus or false
+    textbox.LayoutOrder = config.layoutOrder or (#self.elements + 1)
+    textbox.Parent = self.content
+    
+    local padding = Instance.new("UIPadding")
+    padding.PaddingLeft = UDim.new(0, 10)
+    padding.Parent = textbox
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 4)
+    corner.Parent = textbox
+    
+    textbox.Focused:Connect(function()
+        textbox.BorderColor3 = self.theme.accent2
+    end)
+    
+    textbox.FocusLost:Connect(function(enter)
+        textbox.BorderColor3 = self.theme.accent
+        callback(textbox.Text, enter)
+    end)
+    
+    table.insert(self.elements, {type = "textbox", element = textbox})
+    return {
+        getText = function()
+            return textbox.Text
+        end,
+        setText = function(newText)
+            textbox.Text = newText
+        end
+    }
+end
+
+-- Slider
+function UILibrary:addSlider(config)
+    config = config or {}
+    local min = config.min or 0
+    local max = config.max or 100
+    local default = config.default or 50
+    local suffix = config.suffix or ""
+    local callback = config.callback or function() end
+    
+    -- Label
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, 0, 0, 20)
+    label.BackgroundTransparency = 1
+    label.Text = (config.text or "Slider") .. ": " .. default .. suffix
+    label.TextColor3 = self.theme.text
+    label.Font = Enum.Font.Code
+    label.TextSize = 11
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.LayoutOrder = config.layoutOrder or (#self.elements + 1)
+    label.Parent = self.content
+    
+    -- Slider background
+    local sliderBg = Instance.new("Frame")
+    sliderBg.Size = UDim2.new(1, 0, 0, 20)
+    sliderBg.BackgroundColor3 = self.theme.slider
+    sliderBg.BorderSizePixel = 0
+    sliderBg.LayoutOrder = config.layoutOrder or (#self.elements + 2)
+    sliderBg.Parent = self.content
+    
+    local bgCorner = Instance.new("UICorner")
+    bgCorner.CornerRadius = UDim.new(0, 4)
+    bgCorner.Parent = sliderBg
+    
+    -- Slider fill
+    local sliderFill = Instance.new("Frame")
+    sliderFill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
+    sliderFill.Position = UDim2.new(0, 0, 0, 0)
+    sliderFill.BackgroundColor3 = self.theme.sliderFill
+    sliderFill.BorderSizePixel = 0
+    sliderFill.Parent = sliderBg
+    
+    local fillCorner = Instance.new("UICorner")
+    fillCorner.CornerRadius = UDim.new(0, 4)
+    fillCorner.Parent = sliderFill
+    
+    -- Slider button (invisible)
+    local sliderButton = Instance.new("TextButton")
+    sliderButton.Size = UDim2.new(1, 0, 1, 0)
+    sliderButton.Active = true
+    sliderButton.Position = UDim2.new(0, 0, 0, 0)
+    sliderButton.BackgroundTransparency = 1
+    sliderButton.Text = ""
+    sliderButton.Parent = sliderBg
+    
+    local currentValue = default
+    local dragging = false
+    
+    local function updateSlider(percentage)
+        percentage = math.clamp(percentage, 0, 1)
+        sliderFill.Size = UDim2.new(percentage, 0, 1, 0)
+        
+        currentValue = math.floor(min + percentage * (max - min) + 0.5)
+        label.Text = (config.text or "Slider") .. ": " .. currentValue .. suffix
+        
+        callback(currentValue, percentage)
+    end
+    
+    sliderButton.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or 
+           input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            
+            local function update(posX)
+                local x = posX or UserInputService:GetMouseLocation().X
+                local sliderPos = sliderBg.AbsolutePosition.X
+                local sliderSize = sliderBg.AbsoluteSize.X
+                local percentage = math.clamp((x - sliderPos) / sliderSize, 0, 1)
+                updateSlider(percentage)
+            end
+            
+            if input.Position and input.UserInputType == Enum.UserInputType.Touch then
+                update(input.Position.X)
+            else
+                update()
+            end
+            
+            local connection
+            connection = UserInputService.InputChanged:Connect(function(input2)
+                if not dragging then return end
+                if input2.UserInputType == Enum.UserInputType.MouseMovement then
+                    update()
+                elseif input2.UserInputType == Enum.UserInputType.Touch then
+                    if input2.Position then update(input2.Position.X) end
+                end
+            end)
+            
+            local endConnection
+            endConnection = UserInputService.InputEnded:Connect(function(input2)
+                if input2.UserInputType == Enum.UserInputType.MouseButton1 or 
+                   input2.UserInputType == Enum.UserInputType.Touch then
+                    dragging = false
+                    connection:Disconnect()
+                    endConnection:Disconnect()
+                end
+            end)
+        end
+    end)
+    
+    table.insert(self.elements, {type = "slider", element = sliderBg, label = label})
+    return {
+        setValue = function(value)
+            local percentage = (value - min) / (max - min)
+            updateSlider(percentage)
+        end,
+        getValue = function()
+            return currentValue
+        end
+    }
+end
+
+-- Dropdown
+function UILibrary:addDropdown(config)
+    config = config or {}
+    local options = config.options or {"Option 1", "Option 2"}
+    local default = config.default or options[1]
+    local callback = config.callback or function() end
+    
+    -- Dropdown button
+    local dropdown = Instance.new("TextButton")
+    dropdown.Size = UDim2.new(1, 0, 0, config.height or 35)
+    dropdown.BackgroundColor3 = self.theme.dropdown
+    dropdown.BorderColor3 = self.theme.accent
+    dropdown.BorderSizePixel = 1
+    dropdown.Text = default
+    dropdown.TextColor3 = self.theme.text
+    dropdown.Font = Enum.Font.Code
+    dropdown.TextSize = 12
+    dropdown.LayoutOrder = config.layoutOrder or (#self.elements + 1)
+    dropdown.Parent = self.content
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 4)
+    corner.Parent = dropdown
+    
+    -- Dropdown menu
+    local menu = Instance.new("Frame")
+    menu.Size = UDim2.new(1, 0, 0, 0)
+    menu.Position = UDim2.new(0, 0, 1, 6)
+    menu.BackgroundColor3 = self.theme.surface
+    menu.BorderColor3 = self.theme.accent2
+    menu.BorderSizePixel = 1
+    menu.Visible = false
+    menu.ZIndex = 100
+    menu.Parent = dropdown
+    
+    local menuLayout = Instance.new("UIListLayout")
+    menuLayout.Padding = UDim.new(0, 4)
+    menuLayout.Parent = menu
+    
+    -- Create option buttons
+    local currentOption = default
+    for i, option in ipairs(options) do
+        local optionBtn = Instance.new("TextButton")
+        optionBtn.Size = UDim2.new(1, -10, 0, 24)
+        optionBtn.Position = UDim2.new(0, 5, 0, 0)
+        optionBtn.BackgroundColor3 = self.theme.surface
+        optionBtn.BorderSizePixel = 0
+        optionBtn.Text = option
+        optionBtn.TextColor3 = self.theme.text
+        optionBtn.Font = Enum.Font.Code
+        optionBtn.TextSize = 12
+        optionBtn.ZIndex = 101
+        optionBtn.Parent = menu
+        
+        optionBtn.MouseButton1Click:Connect(function()
+            currentOption = option
+            dropdown.Text = option
+            menu.Visible = false
+            callback(option)
+        end)
+        
+        createHoverEffect(optionBtn, self.theme.surface)
+    end
+    
+    -- Resize menu
+    menuLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        local h = menuLayout.AbsoluteContentSize.Y + 8
+        menu.Size = UDim2.new(1, 0, 0, h)
+    end)
+    
+    dropdown.MouseButton1Click:Connect(function()
+        menu.Visible = not menu.Visible
+    end)
+    
+    table.insert(self.elements, {type = "dropdown", element = dropdown, menu = menu})
+    return {
+        setOption = function(option)
+            currentOption = option
+            dropdown.Text = option
+        end,
+        getOption = function()
+            return currentOption
+        end
+    }
+end
+
+-- Divider
+function UILibrary:addDivider(config)
+    config = config or {}
+    
+    local divider = Instance.new("Frame")
+    divider.Size = UDim2.new(1, -20, 0, config.height or 1)
+    divider.BackgroundColor3 = config.color or Color3.fromRGB(255, 255, 255)
+    divider.BackgroundTransparency = config.transparency or 0.8
+    divider.BorderSizePixel = 0
+    divider.LayoutOrder = config.layoutOrder or (#self.elements + 1)
+    divider.Parent = self.content
+    
+    table.insert(self.elements, {type = "divider", element = divider})
+    return divider
+end
+
+-- Button Row (multiple buttons side-by-side)
+function UILibrary:addButtonRow(config)
+    config = config or {}
+    local buttons = config.buttons or {}
+    
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1, 0, 0, config.height or 36)
+    row.BackgroundTransparency = 1
+    row.LayoutOrder = config.layoutOrder or (#self.elements + 1)
+    row.Parent = self.content
+    
+    local buttonWidth = 1 / #buttons
+    local spacing = 0.02
+    
+    local createdButtons = {}
+    for i, btnConfig in ipairs(buttons) do
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(buttonWidth - spacing, 0, 1, 0)
+        btn.Position = UDim2.new((i-1) * buttonWidth + (spacing/2), 0, 0, 0)
+        btn.BackgroundColor3 = self.theme.surface
+        btn.BorderColor3 = btnConfig.borderColor or self.theme.accent
+        btn.BorderSizePixel = 2
+        btn.Text = btnConfig.text or "Button"
+        btn.TextColor3 = btnConfig.textColor or self.theme.accent
+        btn.Font = Enum.Font.Code
+        btn.TextSize = btnConfig.textSize or 11
+        btn.Parent = row
+        
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, 4)
+        corner.Parent = btn
+        
+        createHoverEffect(btn, self.theme.surface)
+        
+        btn.MouseButton1Click:Connect(btnConfig.callback or function() end)
+        
+        table.insert(createdButtons, btn)
+    end
+    
+    table.insert(self.elements, {type = "buttonrow", element = row, buttons = createdButtons})
+    return createdButtons
+end
+
+-- Move Button Grid (M1, M2, M3, M4 style)
+function UILibrary:addMoveButtons(config)
+    config = config or {}
+    local callback = config.callback or function() end
+    local selectedMove = config.default or 1
+    
+    -- Label
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, 0, 0, 20)
+    label.BackgroundTransparency = 1
+    label.Text = config.text or "SELECT MOVE"
+    label.TextColor3 = self.theme.text
+    label.Font = Enum.Font.Code
+    label.TextSize = 12
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.LayoutOrder = config.layoutOrder or (#self.elements + 1)
+    label.Parent = self.content
+    
+    -- Moves row
+    local movesRow = Instance.new("Frame")
+    movesRow.Size = UDim2.new(1, 0, 0, 50)
+    movesRow.BackgroundTransparency = 1
+    movesRow.LayoutOrder = config.layoutOrder or (#self.elements + 2)
+    movesRow.Parent = self.content
+    
+    local moveButtons = {}
+    
+    for i = 1, 4 do
+        local moveBtn = Instance.new("TextButton")
+        moveBtn.Size = UDim2.new(0.23, 0, 1, 0)
+        moveBtn.Position = UDim2.new((i-1) * 0.25 + 0.01, 0, 0, 0)
+        moveBtn.BackgroundColor3 = self.theme.surface
+        moveBtn.BorderColor3 = self.theme.accent
+        moveBtn.BorderSizePixel = 2
+        moveBtn.Text = "M" .. tostring(i)
+        moveBtn.TextColor3 = self.theme.text
+        moveBtn.Font = Enum.Font.Code
+        moveBtn.TextSize = 18
+        moveBtn.Parent = movesRow
+        
+        local moveCorner = Instance.new("UICorner")
+        moveCorner.CornerRadius = UDim.new(0, 6)
+        moveCorner.Parent = moveBtn
+        
+        moveButtons[i] = moveBtn
+        
+        moveBtn.MouseButton1Click:Connect(function()
+            -- Deselect all
+            for j = 1, 4 do
+                moveButtons[j].BackgroundColor3 = self.theme.surface
+                moveButtons[j].BorderColor3 = self.theme.accent
+                moveButtons[j].TextColor3 = self.theme.text
+            end
+            
+            -- Select this button
+            moveBtn.BackgroundColor3 = self.theme.toggleOn
+            moveBtn.BorderColor3 = self.theme.toggleOn
+            moveBtn.TextColor3 = self.theme.background
+            selectedMove = i
+            
+            callback(i)
+        end)
+        
+        createHoverEffect(moveBtn, self.theme.surface)
+    end
+    
+    -- Initialize selection
+    moveButtons[selectedMove].BackgroundColor3 = self.theme.toggleOn
+    moveButtons[selectedMove].BorderColor3 = self.theme.toggleOn
+    moveButtons[selectedMove].TextColor3 = self.theme.background
+    
+    table.insert(self.elements, {type = "movebuttons", element = movesRow, buttons = moveButtons})
+    return {
+        setMove = function(move)
+            -- Deselect all
+            for j = 1, 4 do
+                moveButtons[j].BackgroundColor3 = self.theme.surface
+                moveButtons[j].BorderColor3 = self.theme.accent
+                moveButtons[j].TextColor3 = self.theme.text
+            end
+            -- Select new
+            moveButtons[move].BackgroundColor3 = self.theme.toggleOn
+            moveButtons[move].BorderColor3 = self.theme.toggleOn
+            moveButtons[move].TextColor3 = self.theme.background
+            selectedMove = move
+        end,
+        getMove = function()
+            return selectedMove
+        end
+    }
+end
+
+-- Status Light Control
+function UILibrary:setStatusLight(color, animated)
+    self.statusLight.BackgroundColor3 = color
+    
+    if animated then
+        task.spawn(function()
+            for i = 1, 10 do
+                self.statusLight.BackgroundColor3 = Color3.fromRGB(255, 215, 0)
+                task.wait(0.15)
+                self.statusLight.BackgroundColor3 = color
+                task.wait(0.15)
+            end
+        end)
+    end
+end
+
+-- Destroy
+function UILibrary:destroy()
+    if self.screenGui then
+        self.screenGui:Destroy()
+    end
+end
+
+return UILibrary
