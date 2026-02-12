@@ -115,14 +115,14 @@ function UILibrary:_createBase()
     self.screenGui.ResetOnSpawn = false
     self.screenGui.Parent = Player.PlayerGui
     
-    -- Main frame (initially hidden - COMPLETELY INVISIBLE during intro)
+    -- Main frame
     self.frame = Instance.new("Frame")
     self.frame.Size = self.size
     self.frame.Position = self.position
     self.frame.BackgroundColor3 = self.theme.background
     self.frame.BorderSizePixel = 0
     self.frame.ClipsDescendants = true
-    self.frame.Visible = false  -- Completely hidden during intro
+    self.frame.Visible = false  -- Hide entire main GUI during intro
     self.frame.Parent = self.screenGui
     
     -- Glow
@@ -130,7 +130,7 @@ function UILibrary:_createBase()
     self.glow.Size = UDim2.new(1, 10, 1, 10)
     self.glow.Position = UDim2.new(0, -5, 0, -5)
     self.glow.BackgroundColor3 = self.theme.glow
-    self.glow.BackgroundTransparency = 0.8  -- Normal transparency (will be hidden by parent)
+    self.glow.BackgroundTransparency = 0.8
     self.glow.BorderSizePixel = 0
     self.glow.ZIndex = -1
     self.glow.Parent = self.frame
@@ -144,7 +144,7 @@ function UILibrary:_createBase()
     self.innerBorder.Size = UDim2.new(1, -4, 1, -4)
     self.innerBorder.Position = UDim2.new(0, 2, 0, 2)
     self.innerBorder.BackgroundColor3 = self.theme.surface
-    self.innerBorder.BackgroundTransparency = 0  -- Normal transparency (will be hidden by parent)
+    self.innerBorder.BackgroundTransparency = 0
     self.innerBorder.BorderSizePixel = 0
     self.innerBorder.Parent = self.frame
     
@@ -331,19 +331,13 @@ function UILibrary:_createIntro()
         end
     end)
     
-    -- After 5 seconds: fade out intro, fade in main GUI
+    -- After 5 seconds: fade out intro, show main GUI
     task.spawn(function()
         task.wait(5)
         oscillating = false
         
-        -- Sync main GUI position to intro position before fading
+        -- Sync main GUI position to intro position
         self.frame.Position = introFrame.Position
-        
-        -- Make main GUI visible (but still transparent for fade-in)
-        self.frame.Visible = true
-        self.frame.BackgroundTransparency = 1
-        self.glow.BackgroundTransparency = 1
-        self.innerBorder.BackgroundTransparency = 1
         
         -- Fade out intro
         local fadeInfo = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
@@ -354,16 +348,11 @@ function UILibrary:_createIntro()
             TweenService:Create(introGlow, fadeInfo, {BackgroundTransparency = 1})
         }
         
-        -- Fade in main GUI
-        local fadeInTweens = {
-            TweenService:Create(self.frame, fadeInfo, {BackgroundTransparency = 0}),
-            TweenService:Create(self.glow, fadeInfo, {BackgroundTransparency = 0.8}),
-            TweenService:Create(self.innerBorder, fadeInfo, {BackgroundTransparency = 0})
-        }
-        
-        -- Play all tweens
+        -- Play fade out tweens
         for _, tween in ipairs(fadeTweens) do tween:Play() end
-        for _, tween in ipairs(fadeInTweens) do tween:Play() end
+        
+        -- Show main GUI immediately (no fade needed since intro covers it)
+        self.frame.Visible = true
         
         -- Wait for fade to complete, then destroy intro
         fadeTweens[1].Completed:Wait()
