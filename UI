@@ -115,9 +115,6 @@ function UILibrary:_createBase()
     self.screenGui.ResetOnSpawn = false
     self.screenGui.Parent = Player.PlayerGui
     
-    -- Create intro animation first
-    self:_createIntro()
-    
     -- Main frame (initially hidden)
     self.frame = Instance.new("Frame")
     self.frame.Size = self.size
@@ -208,6 +205,9 @@ function UILibrary:_createBase()
     local indicatorCorner = Instance.new("UICorner")
     indicatorCorner.CornerRadius = UDim.new(0, 2)
     indicatorCorner.Parent = self.activeIndicator
+    
+    -- NOW create intro animation (after all GUI elements exist)
+    self:_createIntro()
 end
 
 -- Intro Animation (5 seconds with oscillating logo)
@@ -1637,3 +1637,6 @@ local textbox1 = tab:addTextbox({
         print("Text entered:", text, "| Enter pressed:", enterPressed)
     end
 })
+
+print("✅ UI Library loaded successfully with all features!")
+print("Press H to toggle the UI")
