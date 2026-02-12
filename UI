@@ -249,6 +249,16 @@ function UILibrary:_createIntro()
     innerCorner.CornerRadius = UDim.new(0, 4)
     innerCorner.Parent = introInner
     
+    -- Draggable area for intro (invisible button covering the whole intro)
+    local introDragArea = Instance.new("TextButton")
+    introDragArea.Size = UDim2.new(1, 0, 1, 0)
+    introDragArea.Position = UDim2.new(0, 0, 0, 0)
+    introDragArea.BackgroundTransparency = 1
+    introDragArea.Text = ""
+    introDragArea.ZIndex = 1003
+    introDragArea.Active = true
+    introDragArea.Parent = introInner
+    
     -- Logo image (centered, oscillating)
     local logo = Instance.new("ImageLabel")
     logo.Size = UDim2.new(0, 120, 0, 120)
@@ -257,6 +267,55 @@ function UILibrary:_createIntro()
     logo.Image = "rbxassetid://107520574095750"
     logo.ZIndex = 1002
     logo.Parent = introInner
+    
+    -- Setup dragging for intro
+    local dragging = false
+    local dragInput = nil
+    local dragStart = nil
+    local startPos = nil
+    
+    local function updateIntro(input)
+        local delta = input.Position - dragStart
+        introFrame.Position = UDim2.new(
+            startPos.X.Scale, startPos.X.Offset + delta.X,
+            startPos.Y.Scale, startPos.Y.Offset + delta.Y
+        )
+    end
+    
+    introDragArea.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or 
+           input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = introFrame.Position
+            dragInput = input
+            
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                    dragInput = nil
+                end
+            end)
+        end
+    end)
+    
+    introDragArea.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or 
+           input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
+    
+    UserInputService.InputChanged:Connect(function(input)
+        if not dragging then return end
+        if input == dragInput then
+            updateIntro(input)
+            return
+        end
+        if input.UserInputType == Enum.UserInputType.Touch then
+            updateIntro(input)
+        end
+    end)
     
     -- Oscillating animation (smooth sine wave)
     local oscillating = true
@@ -276,6 +335,9 @@ function UILibrary:_createIntro()
     task.spawn(function()
         task.wait(5)
         oscillating = false
+        
+        -- Sync main GUI position to intro position before fading
+        self.frame.Position = introFrame.Position
         
         -- Fade out intro
         local fadeInfo = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
