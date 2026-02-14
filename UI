@@ -68,8 +68,8 @@ local function updateCheckboxAppearance(checkbox, isEnabled, theme)
         checkbox.Text = "✓"
         checkbox.TextColor3 = theme.background  -- Dark checkmark
         checkbox.TextScaled = true
-        checkbox.BackgroundColor3 = theme.dropdown  -- Keep grey background
-        checkbox.BorderColor3 = theme.accent  -- Keep normal border
+        checkbox.BackgroundColor3 = theme.dropdown  -- Grey background
+        checkbox.BorderColor3 = theme.accent
     else
         checkbox.Text = ""
         checkbox.TextColor3 = theme.toggleOn
@@ -700,22 +700,44 @@ function UILibrary:addToggle(config)
     local state = default
     updateCheckboxAppearance(checkbox, state, self.theme)
     
-    checkbox.MouseButton1Click:Connect(function()
-        state = not state
-        updateCheckboxAppearance(checkbox, state, self.theme)
-        
-        -- Force color update after a brief delay to ensure hover effect doesn't interfere
-        task.spawn(function()
-            task.wait(0.05)
-            updateCheckboxAppearance(checkbox, state, self.theme)
-        end)
-        
-        callback(state)
+    local isMouseOver = false
+    
+    checkbox.MouseEnter:Connect(function()
+        isMouseOver = true
+        -- If enabled, show green background while hovering
+        if state then
+            checkbox.BackgroundColor3 = self.theme.toggleOn
+            checkbox.BorderColor3 = self.theme.toggleOn
+            checkbox.TextColor3 = self.theme.background
+        else
+            -- Normal hover effect for disabled state
+            local hoverColor = checkbox.BackgroundColor3:Lerp(Color3.fromRGB(255, 255, 255), 0.06)
+            checkbox.BackgroundColor3 = hoverColor
+        end
     end)
     
-    -- Use hover effect with dynamic color lookup
-    createHoverEffect(checkbox, function()
-        return checkbox.BackgroundColor3
+    checkbox.MouseLeave:Connect(function()
+        isMouseOver = false
+        -- Return to normal appearance based on state
+        updateCheckboxAppearance(checkbox, state, self.theme)
+    end)
+    
+    checkbox.MouseButton1Click:Connect(function()
+        state = not state
+        
+        -- Update appearance immediately
+        if isMouseOver and state then
+            -- If mouse is still over and now enabled, show green
+            checkbox.BackgroundColor3 = self.theme.toggleOn
+            checkbox.BorderColor3 = self.theme.toggleOn
+            checkbox.Text = "✓"
+            checkbox.TextColor3 = self.theme.background
+        else
+            -- Otherwise show normal state appearance
+            updateCheckboxAppearance(checkbox, state, self.theme)
+        end
+        
+        callback(state)
     end)
     
     table.insert(self.elements, {type = "toggle", element = row, checkbox = checkbox})
