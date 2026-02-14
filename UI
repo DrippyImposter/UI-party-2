@@ -702,6 +702,10 @@ function UILibrary:addToggle(config)
     
     local isMouseOver = false
     local justToggled = false  -- Track if we just toggled to show green once
+    local baseColor = self.theme.dropdown  -- Store the base grey color
+    
+    -- Custom hover effect for toggles
+    local hoverColor = baseColor:Lerp(Color3.fromRGB(255, 255, 255), 0.1)
     
     checkbox.MouseEnter:Connect(function()
         isMouseOver = true
@@ -713,9 +717,7 @@ function UILibrary:addToggle(config)
             checkbox.TextColor3 = self.theme.background
             checkbox.Text = "✓"
         else
-            -- Normal hover effect - slightly lighter for any state
-            local baseColor = state and self.theme.dropdown or self.theme.dropdown
-            local hoverColor = baseColor:Lerp(Color3.fromRGB(255, 255, 255), 0.1)
+            -- Normal hover effect - show lighter grey
             checkbox.BackgroundColor3 = hoverColor
         end
     end)
@@ -743,8 +745,6 @@ function UILibrary:addToggle(config)
             updateCheckboxAppearance(checkbox, state, self.theme)
             -- If still hovering, apply hover effect
             if isMouseOver then
-                local baseColor = checkbox.BackgroundColor3
-                local hoverColor = baseColor:Lerp(Color3.fromRGB(255, 255, 255), 0.1)
                 checkbox.BackgroundColor3 = hoverColor
             end
         end
