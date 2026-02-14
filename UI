@@ -66,10 +66,10 @@ end
 local function updateCheckboxAppearance(checkbox, isEnabled, theme)
     if isEnabled then
         checkbox.Text = "✓"
-        checkbox.TextColor3 = theme.background
+        checkbox.TextColor3 = theme.background  -- Dark checkmark
         checkbox.TextScaled = true
-        checkbox.BackgroundColor3 = theme.toggleOn
-        checkbox.BorderColor3 = theme.toggleOn
+        checkbox.BackgroundColor3 = theme.dropdown  -- Keep grey background
+        checkbox.BorderColor3 = theme.accent  -- Keep normal border
     else
         checkbox.Text = ""
         checkbox.TextColor3 = theme.toggleOn
