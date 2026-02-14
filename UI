@@ -47,14 +47,18 @@ local defaultTheme = {
 }
 
 -- Utility Functions
-local function createHoverEffect(button, originalColor)
-    local hoverColor = originalColor:Lerp(Color3.fromRGB(255, 255, 255), 0.06)
+local function createHoverEffect(button, getOriginalColor)
+    -- If getOriginalColor is a function, call it; otherwise use it as a static color
+    local isFunction = type(getOriginalColor) == "function"
     
     button.MouseEnter:Connect(function()
+        local originalColor = isFunction and getOriginalColor() or getOriginalColor
+        local hoverColor = originalColor:Lerp(Color3.fromRGB(255, 255, 255), 0.06)
         button.BackgroundColor3 = hoverColor
     end)
     
     button.MouseLeave:Connect(function()
+        local originalColor = isFunction and getOriginalColor() or getOriginalColor
         button.BackgroundColor3 = originalColor
     end)
 end
@@ -702,13 +706,19 @@ function UILibrary:addToggle(config)
         callback(state)
     end)
     
-    createHoverEffect(checkbox, checkbox.BackgroundColor3)
+    -- Pass a function that returns the current background color dynamically
+    createHoverEffect(checkbox, function()
+        return checkbox.BackgroundColor3
+    end)
     
     table.insert(self.elements, {type = "toggle", element = row, checkbox = checkbox})
     return {
         setState = function(newState)
             state = newState
-            updateCheckboxAppearance(checkbox, state, self.theme)
+            -- Force update appearance immediately
+            task.spawn(function()
+                updateCheckboxAppearance(checkbox, state, self.theme)
+            end)
         end,
         getState = function()
             return state
