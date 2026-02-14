@@ -703,10 +703,17 @@ function UILibrary:addToggle(config)
     checkbox.MouseButton1Click:Connect(function()
         state = not state
         updateCheckboxAppearance(checkbox, state, self.theme)
+        
+        -- Force color update after a brief delay to ensure hover effect doesn't interfere
+        task.spawn(function()
+            task.wait(0.05)
+            updateCheckboxAppearance(checkbox, state, self.theme)
+        end)
+        
         callback(state)
     end)
     
-    -- Pass a function that returns the current background color dynamically
+    -- Use hover effect with dynamic color lookup
     createHoverEffect(checkbox, function()
         return checkbox.BackgroundColor3
     end)
@@ -715,10 +722,7 @@ function UILibrary:addToggle(config)
     return {
         setState = function(newState)
             state = newState
-            -- Force update appearance immediately
-            task.spawn(function()
-                updateCheckboxAppearance(checkbox, state, self.theme)
-            end)
+            updateCheckboxAppearance(checkbox, state, self.theme)
         end,
         getState = function()
             return state
