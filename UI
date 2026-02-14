@@ -701,33 +701,39 @@ function UILibrary:addToggle(config)
     updateCheckboxAppearance(checkbox, state, self.theme)
     
     local isMouseOver = false
+    local justToggled = false  -- Track if we just toggled to show green once
     
     checkbox.MouseEnter:Connect(function()
         isMouseOver = true
-        -- If enabled, show green background while hovering
-        if state then
+        
+        -- Only show green if we just toggled to enabled and haven't left yet
+        if state and justToggled then
             checkbox.BackgroundColor3 = self.theme.toggleOn
             checkbox.BorderColor3 = self.theme.toggleOn
             checkbox.TextColor3 = self.theme.background
+            checkbox.Text = "✓"
         else
-            -- Normal hover effect for disabled state
-            local hoverColor = checkbox.BackgroundColor3:Lerp(Color3.fromRGB(255, 255, 255), 0.06)
+            -- Normal hover effect - slightly lighter
+            local currentColor = checkbox.BackgroundColor3
+            local hoverColor = currentColor:Lerp(Color3.fromRGB(255, 255, 255), 0.06)
             checkbox.BackgroundColor3 = hoverColor
         end
     end)
     
     checkbox.MouseLeave:Connect(function()
         isMouseOver = false
+        justToggled = false  -- Clear the flag when cursor leaves
         -- Return to normal appearance based on state
         updateCheckboxAppearance(checkbox, state, self.theme)
     end)
     
     checkbox.MouseButton1Click:Connect(function()
         state = not state
+        justToggled = true  -- Set flag when toggling
         
         -- Update appearance immediately
         if isMouseOver and state then
-            -- If mouse is still over and now enabled, show green
+            -- If mouse is still over and now enabled, show green (only this once)
             checkbox.BackgroundColor3 = self.theme.toggleOn
             checkbox.BorderColor3 = self.theme.toggleOn
             checkbox.Text = "✓"
@@ -744,6 +750,7 @@ function UILibrary:addToggle(config)
     return {
         setState = function(newState)
             state = newState
+            justToggled = false  -- Don't show green when programmatically set
             updateCheckboxAppearance(checkbox, state, self.theme)
         end,
         getState = function()
