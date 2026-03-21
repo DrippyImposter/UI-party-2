@@ -728,63 +728,43 @@ function UILibrary:addToggle(config)
     local state = default
     updateCheckboxAppearance(checkbox, state, self.theme)
     
-    local elem = {type = "toggle", element = row, checkbox = checkbox, isMouseOver = false, justToggled = false}
-    table.insert(self.elements, elem)
-    
-    -- Custom hover effect for toggles
-    local baseColor = self.theme.dropdown  -- Store the base grey color
+    -- Simple hover effect
+    local baseColor = self.theme.dropdown
     local hoverColor = baseColor:Lerp(Color3.fromRGB(255, 255, 255), 0.1)
     
     checkbox.MouseEnter:Connect(function()
-        elem.isMouseOver = true
-        
-        -- Only show green if we just toggled to enabled and haven't left yet
-        if state and elem.justToggled then
-            checkbox.BackgroundColor3 = self.theme.toggleOn
-            checkbox.BorderColor3 = self.theme.toggleOn
-            checkbox.TextColor3 = self.theme.background
-            checkbox.Text = "✓"
-        else
-            -- Normal hover effect - show lighter grey
-            checkbox.BackgroundColor3 = hoverColor
-        end
+        checkbox.BackgroundColor3 = hoverColor
     end)
     
     checkbox.MouseLeave:Connect(function()
-        elem.isMouseOver = false
-        elem.justToggled = false  -- Clear the flag when cursor leaves
-        -- Return to normal appearance based on state
         updateCheckboxAppearance(checkbox, state, self.theme)
     end)
     
     checkbox.MouseButton1Click:Connect(function()
         state = not state
-        elem.justToggled = state  -- Only set flag when enabling (not when disabling)
         
-        -- Update appearance immediately
-        if elem.isMouseOver and state and elem.justToggled then
-            -- If mouse is still over and now enabled, show green (only this once)
+        -- Flash green for 0.3 seconds, then revert to normal
+        task.spawn(function()
             checkbox.BackgroundColor3 = self.theme.toggleOn
             checkbox.BorderColor3 = self.theme.toggleOn
-            checkbox.Text = "✓"
             checkbox.TextColor3 = self.theme.background
-        else
-            -- Otherwise show normal state appearance
+            checkbox.Text = "✓"
+            
+            task.wait(0.3)
+            
+            -- Revert to normal appearance based on state
             updateCheckboxAppearance(checkbox, state, self.theme)
-            -- If still hovering, apply hover effect
-            if elem.isMouseOver then
-                checkbox.BackgroundColor3 = hoverColor
-            end
-        end
+        end)
         
         callback(state)
     end)
     
+    table.insert(self.elements, {type = "toggle", element = row, checkbox = checkbox})
+    
     return {
         setState = function(newState)
             state = newState
-            elem.justToggled = newState  -- Set flag when programmatically set
-            updateCheckboxAppearance(checkbox, newState, self.theme)
+            updateCheckboxAppearance(checkbox, state, self.theme)
         end,
         getState = function()
             return state
