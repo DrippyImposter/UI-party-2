@@ -430,11 +430,14 @@ function UILibrary:_setupToggle()
                     if elem.type == "toggle" and elem.checkbox then
                         -- Get current state
                         local currentState = elem.checkbox.Text == "✓"
+                        -- Reset justToggled flag to prevent stuck green/dark appearance
+                        elem.justToggled = false
                         -- Reset to normal appearance (removes any stuck hover/green states)
                         updateCheckboxAppearance(elem.checkbox, currentState, self.theme)
                     end
                 end
             end
+            
         end
     end)
 end
