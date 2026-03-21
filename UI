@@ -460,7 +460,12 @@ function UILibrary:_moveIndicatorTo(button, instant)
     local targetX = button.Position.X.Offset - firstTabPos
     local targetW = button.Size.X.Offset - 12
     
-    local targetPos = UDim2.new(0, targetX + 6, 1, -3)
+    -- Center the indicator under the tab:
+    -- Tab width = 95, Indicator width = 83, Need 6px margin on each side
+    -- So indicator X should be tab.X + 6 (not just tab.X)
+    local centeredX = targetX + 6 + 6  -- +6 for relative offset, +6 for centering margin
+    
+    local targetPos = UDim2.new(0, centeredX, 1, -3)
     local targetSize = UDim2.new(0, targetW, 0, 3)
     
     if instant then
