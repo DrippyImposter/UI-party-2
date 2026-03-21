@@ -431,10 +431,22 @@ function UILibrary:_setupToggle()
                         -- Reset hover state tracking
                         elem.isMouseOver = false
                         elem.justToggled = false
-                        -- Get current state
-                        local currentState = elem.checkbox.Text == "✓"
-                        -- Reset to normal appearance (removes any stuck hover/green states)
-                        updateCheckboxAppearance(elem.checkbox, currentState, self.theme)
+                        -- Ensure checkbox is fully visible
+                        elem.checkbox.BackgroundTransparency = 0
+                        elem.checkbox.BorderSizePixel = 1
+                        -- Get current state from text
+                        local isEnabled = elem.checkbox.Text == "✓"
+                        -- Force correct colors based on state
+                        if isEnabled then
+                            elem.checkbox.BackgroundColor3 = self.theme.dropdown
+                            elem.checkbox.TextColor3 = self.theme.background
+                            elem.checkbox.Text = "✓"
+                        else
+                            elem.checkbox.BackgroundColor3 = self.theme.dropdown
+                            elem.checkbox.TextColor3 = self.theme.toggleOn
+                            elem.checkbox.Text = ""
+                        end
+                        elem.checkbox.BorderColor3 = self.theme.accent
                     end
                 end
             end
@@ -771,8 +783,8 @@ function UILibrary:addToggle(config)
     return {
         setState = function(newState)
             state = newState
-            justToggled = false  -- Don't show green when programmatically set
-            updateCheckboxAppearance(checkbox, state, self.theme)
+            elem.justToggled = newState  -- Set flag when programmatically set
+            updateCheckboxAppearance(checkbox, newState, self.theme)
         end,
         getState = function()
             return state
