@@ -424,16 +424,14 @@ function UILibrary:_setupToggle()
            input.KeyCode == self.toggleKey then
             self.screenGui.Enabled = not self.screenGui.Enabled
             
-            -- Reset all toggle hover states when hiding UI
-            if not self.screenGui.Enabled then
-                for _, tab in ipairs(self.tabs) do
-                    for _, elem in ipairs(tab.elements) do
-                        if elem.type == "toggle" and elem.checkbox then
-                            -- Get current state
-                            local currentState = elem.checkbox.Text == "✓"
-                            -- Reset to normal appearance (removes green hover)
-                            updateCheckboxAppearance(elem.checkbox, currentState, self.theme)
-                        end
+            -- Reset all toggle hover states when toggling UI visibility
+            for _, tab in ipairs(self.tabs) do
+                for _, elem in ipairs(tab.elements) do
+                    if elem.type == "toggle" and elem.checkbox then
+                        -- Get current state
+                        local currentState = elem.checkbox.Text == "✓"
+                        -- Reset to normal appearance (removes any stuck hover/green states)
+                        updateCheckboxAppearance(elem.checkbox, currentState, self.theme)
                     end
                 end
             end
