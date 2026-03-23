@@ -621,7 +621,7 @@ function UILibrary:addActionToggle(config)
     
     local checkbox = Instance.new("TextButton")
     checkbox.Size = UDim2.new(0, 24, 0, 24)
-    checkbox.Position = UDim2.new(0, 4, 0, 8)
+    checkbox.Position = UDim2.new(0, 4, 0, 3)
     checkbox.BackgroundColor3 = self.theme.dropdown
     checkbox.BorderColor3 = self.theme.accent
     checkbox.BorderSizePixel = 1
