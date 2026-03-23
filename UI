@@ -89,11 +89,14 @@ function UILibrary.new(config)
     self.position = config.position or UDim2.new(0.5, -200, 0.5, -310)
     self.toggleKey = config.toggleKey or Enum.KeyCode.H
     
-    -- Check if mobile
-    self.isMobile = UserInputService.TouchEnabled
-    if self.isMobile then
-        self.size = UDim2.new(0, 340, 0, 560)
-        self.position = UDim2.new(0.5, -170, 0.5, -280)
+    -- Check if phone (small screen + touch), not tablet
+    local screenSize = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1920, 1080)
+    local isSmallScreen = screenSize.X <= 600 or screenSize.Y <= 400
+    self.isPhone = UserInputService.TouchEnabled and isSmallScreen
+    
+    if self.isPhone then
+        self.size = UDim2.new(0, 320, 0, 480)
+        self.position = UDim2.new(0.5, -160, 0.5, -240)
     end
     
     self.tabs = {}
@@ -611,14 +614,14 @@ function UILibrary:addActionToggle(config)
     local callback = config.callback or function() end
     
     local row = Instance.new("Frame")
-    row.Size = UDim2.new(1, 0, 0, config.height or 30)
+    row.Size = UDim2.new(1, 0, 0, 24)
     row.BackgroundTransparency = 1
     row.LayoutOrder = config.layoutOrder or (#self.elements + 1)
     row.Parent = self.content
     
     local checkbox = Instance.new("TextButton")
     checkbox.Size = UDim2.new(0, 24, 0, 24)
-    checkbox.Position = UDim2.new(0, 4, 0, 3)
+    checkbox.Position = UDim2.new(0, 4, 0, 8)
     checkbox.BackgroundColor3 = self.theme.dropdown
     checkbox.BorderColor3 = self.theme.accent
     checkbox.BorderSizePixel = 1
@@ -658,9 +661,8 @@ function UILibrary:addActionToggle(config)
             -- Turn green
             checkbox.BackgroundColor3 = self.theme.toggleOn
             checkbox.BorderColor3 = self.theme.toggleOn
-            checkbox.Text = "✓"
             checkbox.TextColor3 = self.theme.background
-            checkbox.TextScaled = true
+            checkbox.Text = "✓"
             
             task.wait(1)
             
@@ -692,11 +694,10 @@ end
 function UILibrary:addToggle(config)
     config = config or {}
     local text = config.text or "Toggle"
-    local default = config.default or false
     local callback = config.callback or function() end
     
     local row = Instance.new("Frame")
-    row.Size = UDim2.new(1, 0, 0, config.height or 30)
+    row.Size = UDim2.new(1, 0, 0, 24)
     row.BackgroundTransparency = 1
     row.LayoutOrder = config.layoutOrder or (#self.elements + 1)
     row.Parent = self.content
@@ -730,7 +731,7 @@ function UILibrary:addToggle(config)
     label.TextYAlignment = Enum.TextYAlignment.Center
     label.Parent = row
     
-    local state = default
+    local state = false
     updateCheckboxAppearance(checkbox, state, self.theme)
     
     -- Simple hover effect
