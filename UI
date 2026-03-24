@@ -1573,6 +1573,7 @@ function UILibrary:addNoteButton(config)
     config = config or {}
     local text = config.text or "Show Notification"
     local noteText = config.noteText or "This is a notification!"
+    local noteCallback = config.noteCallback or nil
     local duration = config.duration or 4
     
     local button = Instance.new("TextButton")
@@ -1594,7 +1595,11 @@ function UILibrary:addNoteButton(config)
     createHoverEffect(button, self.theme.surface)
     
     button.MouseButton1Click:Connect(function()
-        self:showNotification(noteText, duration)
+        local displayText = noteText
+        if noteCallback and type(noteCallback) == "function" then
+            displayText = noteCallback()
+        end
+        self:showNotification(displayText, duration)
     end)
     
     table.insert(self.elements, {type = "button", element = button})
