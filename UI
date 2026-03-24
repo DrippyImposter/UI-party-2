@@ -1504,9 +1504,9 @@ function UILibrary:showNotification(text, duration)
     
     local notification = Instance.new("Frame")
     notification.Size = UDim2.new(1, 0, 0, 50)
-    notification.BackgroundColor3 = self.theme.surface
-    notification.BorderColor3 = self.theme.accent
-    notification.BorderSizePixel = 1
+    notification.BackgroundColor3 = self.theme.background
+    notification.BorderColor3 = self.theme.accent2
+    notification.BorderSizePixel = 2
     notification.Parent = container
     
     local corner = Instance.new("UICorner")
@@ -1534,7 +1534,7 @@ function UILibrary:showNotification(text, duration)
     local timerBar = Instance.new("Frame")
     timerBar.Size = UDim2.new(1, 0, 0, 4)
     timerBar.Position = UDim2.new(0, 0, 1, -4)
-    timerBar.BackgroundColor3 = self.theme.accent
+    timerBar.BackgroundColor3 = self.theme.accent2
     timerBar.Parent = notification
     
     local timerCorner = Instance.new("UICorner")
@@ -1543,6 +1543,8 @@ function UILibrary:showNotification(text, duration)
     
     task.spawn(function()
         task.wait(0.05)
+        local startSize = timerBar.Size
+        local targetX = 0
         local steps = duration * 20
         local stepDelay = 0.05
         
