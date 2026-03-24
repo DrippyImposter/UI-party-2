@@ -85,9 +85,11 @@ function UILibrary.new(config)
     config = config or {}
     self.title = config.title or "UI Library"
     self.theme = config.theme or defaultTheme
-    self.size = config.size or UDim2.new(0, 400, 0, 620)
     self.position = config.position or UDim2.new(0.5, -200, 0.5, -310)
     self.toggleKey = config.toggleKey or Enum.KeyCode.H
+    
+    -- Hardcoded window size: 400x620 for PC/tablet, 320x480 for phone
+    self.size = UDim2.new(0, 400, 0, 620)
     
     -- Check if phone (small screen + touch), not tablet
     local screenSize = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1920, 1080)
