@@ -1476,4 +1476,137 @@ function UILibrary:destroy()
     end
 end
 
+-- Notification System
+function UILibrary:createNotificationContainer()
+    if self.notificationContainer then return self.notificationContainer end
+    
+    local container = Instance.new("Frame")
+    container.Name = "NotificationContainer"
+    container.Size = UDim2.new(0, 320, 0, 200)
+    container.Position = UDim2.new(1, -330, 1, -210)
+    container.BackgroundTransparency = 1
+    container.Parent = self.screenGui
+    
+    local layout = Instance.new("UIListLayout")
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    layout.Padding = UDim.new(0, 8)
+    layout.VerticalAlignment = Enum.VerticalAlignment.Bottom
+    layout.Parent = container
+    
+    self.notificationContainer = container
+    return container
+end
+
+function UILibrary:showNotification(text, duration)
+    duration = duration or 4
+    
+    local container = self:createNotificationContainer()
+    
+    local notification = Instance.new("Frame")
+    notification.Size = UDim2.new(1, 0, 0, 50)
+    notification.BackgroundColor3 = self.theme.surface
+    notification.BorderColor3 = self.theme.accent
+    notification.BorderSizePixel = 1
+    notification.Parent = container
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 6)
+    corner.Parent = notification
+    
+    local padding = Instance.new("UIPadding")
+    padding.PaddingLeft = UDim.new(0, 10)
+    padding.PaddingRight = UDim.new(0, 10)
+    padding.PaddingTop = UDim.new(0, 8)
+    padding.Parent = notification
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, 0, 1, -16)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = self.theme.text
+    label.Font = Enum.Font.Code
+    label.TextSize = 12
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextYAlignment = Enum.TextYAlignment.Top
+    label.TextWrapped = true
+    label.Parent = notification
+    
+    local timerBar = Instance.new("Frame")
+    timerBar.Size = UDim2.new(1, 0, 0, 4)
+    timerBar.Position = UDim2.new(0, 0, 1, -4)
+    timerBar.BackgroundColor3 = self.theme.accent
+    timerBar.Parent = notification
+    
+    local timerCorner = Instance.new("UICorner")
+    timerCorner.CornerRadius = UDim.new(0, 2)
+    timerCorner.Parent = timerBar
+    
+    task.spawn(function()
+        task.wait(0.05)
+        local steps = duration * 20
+        local stepDelay = 0.05
+        
+        for i = 1, steps do
+            if not timerBar or not timerBar.Parent then return end
+            local progress = 1 - (i / steps)
+            timerBar.Size = UDim2.new(progress, 0, 0, 4)
+            task.wait(stepDelay)
+        end
+        
+        if timerBar and timerBar.Parent then
+            local fadeInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+            TweenService:Create(notification, fadeInfo, {BackgroundTransparency = 1}):Play()
+            TweenService:Create(label, fadeInfo, {TextTransparency = 1}):Play()
+            TweenService:Create(timerBar, fadeInfo, {BackgroundTransparency = 1}):Play()
+            
+            task.wait(0.3)
+            notification:Destroy()
+        end
+    end)
+    
+    return notification
+end
+
+function UILibrary:addNoteButton(config)
+    config = config or {}
+    local text = config.text or "Show Notification"
+    local noteText = config.noteText or "This is a notification!"
+    local duration = config.duration or 4
+    
+    local button = Instance.new("TextButton")
+    button.Size = UDim2.new(1, 0, 0, config.height or 40)
+    button.BackgroundColor3 = self.theme.surface
+    button.BorderColor3 = config.borderColor or self.theme.accent2
+    button.BorderSizePixel = 2
+    button.Text = text
+    button.TextColor3 = config.textColor or self.theme.accent2
+    button.Font = Enum.Font.Code
+    button.TextSize = config.textSize or 12
+    button.LayoutOrder = config.layoutOrder or (#self.elements + 1)
+    button.Parent = self.content
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 4)
+    corner.Parent = button
+    
+    createHoverEffect(button, self.theme.surface)
+    
+    button.MouseButton1Click:Connect(function()
+        self:showNotification(noteText, duration)
+    end)
+    
+    table.insert(self.elements, {type = "button", element = button})
+    
+    return {
+        setText = function(newText)
+            button.Text = newText
+        end,
+        setNote = function(newNote, newDuration)
+            noteText = newNote
+            duration = newDuration or duration
+        end,
+        element = button
+    }
+end
+
 return UILibrary
