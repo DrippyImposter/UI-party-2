@@ -427,7 +427,7 @@ function UILibrary:_setupToggle()
         if UserInputService:GetFocusedTextBox() then return end
         if input.UserInputType == Enum.UserInputType.Keyboard and 
            input.KeyCode == self.toggleKey then
-            self.screenGui.Enabled = not self.screenGui.Enabled
+            self.frame.Visible = not self.frame.Visible
             
             -- Reset all toggle hover states when toggling UI visibility
             for _, tab in ipairs(self.tabs) do
@@ -1504,8 +1504,23 @@ function UILibrary:showNotification(text, duration)
     
     local container = self:createNotificationContainer()
     
+    -- Calculate text size dynamically
+    local TextService = game:GetService("TextService")
+    local maxWidth = 300 -- Account for padding (320 - 20)
+    local textSize = TextService:GetTextSize(
+        text,
+        12,
+        Enum.Font.Code,
+        Vector2.new(maxWidth, math.huge)
+    )
+    
+    -- Base height: padding (16) + minimum readable area, plus text height
+    local baseHeight = 34 -- padding (8 top + 8 bottom) + timer bar (4) + extra spacing (14)
+    local contentHeight = textSize.Y + 20 -- text height + extra padding for readability
+    local totalHeight = math.max(50, baseHeight + contentHeight)
+    
     local notification = Instance.new("Frame")
-    notification.Size = UDim2.new(1, 0, 0, 50)
+    notification.Size = UDim2.new(1, 0, 0, totalHeight)
     notification.BackgroundColor3 = self.theme.background
     notification.BorderColor3 = self.theme.accent2
     notification.BorderSizePixel = 2
@@ -1519,10 +1534,11 @@ function UILibrary:showNotification(text, duration)
     padding.PaddingLeft = UDim.new(0, 10)
     padding.PaddingRight = UDim.new(0, 10)
     padding.PaddingTop = UDim.new(0, 8)
+    padding.PaddingBottom = UDim.new(0, 8)
     padding.Parent = notification
     
     local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(1, 0, 1, -16)
+    label.Size = UDim2.new(1, 0, 1, -12) -- Leave space for timer bar
     label.BackgroundTransparency = 1
     label.Text = text
     label.TextColor3 = self.theme.text
