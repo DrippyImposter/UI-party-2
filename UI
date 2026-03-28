@@ -578,34 +578,103 @@ function UILibrary:addButton(config)
     local text = config.text or "Button"
     local callback = config.callback or function() end
     
+    -- Container frame for layering effects
+    local container = Instance.new("Frame")
+    container.Size = UDim2.new(1, 0, 0, config.height or 40)
+    container.BackgroundTransparency = 1
+    container.LayoutOrder = config.layoutOrder or (#self.elements + 1)
+    container.Parent = self.content
+    
+    -- Shadow/Glow effect (outer frame)
+    local shadow = Instance.new("Frame")
+    shadow.Name = "Shadow"
+    shadow.Size = UDim2.new(1, 0, 1, 0)
+    shadow.BackgroundColor3 = config.borderColor or self.theme.accent2
+    shadow.BackgroundTransparency = 0.7
+    shadow.BorderSizePixel = 0
+    shadow.Parent = container
+    
+    local shadowCorner = Instance.new("UICorner")
+    shadowCorner.CornerRadius = UDim.new(0, 6)
+    shadowCorner.Parent = shadow
+    
+    -- Main button background
     local button = Instance.new("TextButton")
-    button.Size = UDim2.new(1, 0, 0, config.height or 40)
-    button.BackgroundColor3 = self.theme.surface
-    button.BorderColor3 = config.borderColor or self.theme.accent2
-    button.BorderSizePixel = 2
+    button.Name = "Button"
+    button.Size = UDim2.new(1, -4, 1, -4)
+    button.Position = UDim2.new(0, 2, 0, 2)
+    button.BackgroundColor3 = self.theme.dropdown
+    button.BorderSizePixel = 0
     button.Text = text
-    button.TextColor3 = config.textColor or self.theme.accent2
-    button.Font = Enum.Font.Code
+    button.TextColor3 = config.textColor or self.theme.text
+    button.Font = Enum.Font.GothamBold
     button.TextSize = config.textSize or 12
-    button.LayoutOrder = config.layoutOrder or (#self.elements + 1)
-    button.Parent = self.content
+    button.AutoButtonColor = false
+    button.Parent = container
     
     local corner = Instance.new("UICorner")
     corner.CornerRadius = UDim.new(0, 4)
     corner.Parent = button
     
-    createHoverEffect(button, self.theme.surface)
+    -- Gradient overlay for depth
+    local gradient = Instance.new("UIGradient")
+    gradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(200, 200, 200))
+    })
+    gradient.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 0.92),
+        NumberSequenceKeypoint.new(1, 0.85)
+    })
+    gradient.Rotation = 90
+    gradient.Parent = button
+    
+    -- Inner stroke for definition
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = config.borderColor or self.theme.accent2
+    stroke.Thickness = 1.5
+    stroke.Transparency = 0.3
+    stroke.Parent = button
+    
+    -- Enhanced hover effect
+    local baseColor = self.theme.dropdown
+    local hoverColor = baseColor:Lerp(Color3.fromRGB(255, 255, 255), 0.15)
+    local pressedColor = baseColor:Lerp(Color3.fromRGB(0, 0, 0), 0.1)
+    
+    button.MouseEnter:Connect(function()
+        TweenService:Create(button, TweenInfo.new(0.15), {BackgroundColor3 = hoverColor}):Play()
+        TweenService:Create(shadow, TweenInfo.new(0.15), {BackgroundTransparency = 0.5}):Play()
+        TweenService:Create(stroke, TweenInfo.new(0.15), {Transparency = 0.1, Thickness = 2}):Play()
+    end)
+    
+    button.MouseLeave:Connect(function()
+        TweenService:Create(button, TweenInfo.new(0.15), {BackgroundColor3 = baseColor}):Play()
+        TweenService:Create(shadow, TweenInfo.new(0.15), {BackgroundTransparency = 0.7}):Play()
+        TweenService:Create(stroke, TweenInfo.new(0.15), {Transparency = 0.3, Thickness = 1.5}):Play()
+    end)
+    
+    button.MouseButton1Down:Connect(function()
+        TweenService:Create(button, TweenInfo.new(0.1), {BackgroundColor3 = pressedColor}):Play()
+        button.Position = UDim2.new(0, 2, 0, 3)
+        button.Size = UDim2.new(1, -4, 1, -6)
+    end)
+    
+    button.MouseButton1Up:Connect(function()
+        TweenService:Create(button, TweenInfo.new(0.1), {BackgroundColor3 = hoverColor}):Play()
+        button.Position = UDim2.new(0, 2, 0, 2)
+        button.Size = UDim2.new(1, -4, 1, -4)
+    end)
     
     button.MouseButton1Click:Connect(callback)
     
-    table.insert(self.elements, {type = "button", element = button})
+    table.insert(self.elements, {type = "button", element = container})
     
     -- Return API with setText
     return {
         setText = function(newText)
             button.Text = newText
         end,
-        element = button
+        element = container
     }
 end
 
