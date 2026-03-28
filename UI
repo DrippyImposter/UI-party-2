@@ -674,7 +674,7 @@ function UILibrary:addButton(config)
         setText = function(newText)
             button.Text = newText
         end,
-        element = container
+        element = button
     }
 end
 
