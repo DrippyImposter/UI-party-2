@@ -619,6 +619,7 @@ function UILibrary:addButton(config)
     textLabel.TextColor3 = config.textColor or self.theme.text
     textLabel.Font = Enum.Font.GothamBold
     textLabel.TextSize = config.textSize or 12
+    textLabel.ZIndex = 10
     textLabel.Parent = button
 
     local corner = Instance.new("UICorner")
