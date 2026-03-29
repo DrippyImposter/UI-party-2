@@ -605,12 +605,20 @@ function UILibrary:addButton(config)
     button.Position = UDim2.new(0, 2, 0, 2)
     button.BackgroundColor3 = self.theme.dropdown
     button.BorderSizePixel = 0
-    button.Text = text
-    button.TextColor3 = config.textColor or self.theme.text
-    button.Font = Enum.Font.GothamBold
-    button.TextSize = config.textSize or 12
+    button.Text = ""  -- Empty text, using TextLabel instead
     button.AutoButtonColor = false
     button.Parent = container
+    
+    -- TextLabel for button text (ensures text is on top of all effects)
+    local textLabel = Instance.new("TextLabel")
+    textLabel.Name = "TextLabel"
+    textLabel.Size = UDim2.new(1, 0, 1, 0)
+    textLabel.BackgroundTransparency = 1
+    textLabel.Text = text
+    textLabel.TextColor3 = config.textColor or self.theme.text
+    textLabel.Font = Enum.Font.GothamBold
+    textLabel.TextSize = config.textSize or 12
+    textLabel.Parent = button
     
     local corner = Instance.new("UICorner")
     corner.CornerRadius = UDim.new(0, 4)
@@ -669,10 +677,10 @@ function UILibrary:addButton(config)
     
     table.insert(self.elements, {type = "button", element = container})
     
-    -- Return API with setText
+    -- Return API with setText (now updates TextLabel)
     return {
         setText = function(newText)
-            button.Text = newText
+            textLabel.Text = newText
         end,
         element = button
     }
