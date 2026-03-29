@@ -85,11 +85,9 @@ function UILibrary.new(config)
     config = config or {}
     self.title = config.title or "UI Library"
     self.theme = config.theme or defaultTheme
+    self.size = config.size or UDim2.new(0, 400, 0, 620)
     self.position = config.position or UDim2.new(0.5, -200, 0.5, -310)
     self.toggleKey = config.toggleKey or Enum.KeyCode.H
-    
-    -- Hardcoded window size: 400x620 for PC/tablet, 320x480 for phone
-    self.size = UDim2.new(0, 400, 0, 620)
     
     -- Check if phone (small screen + touch), not tablet
     local screenSize = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1920, 1080)
@@ -427,7 +425,7 @@ function UILibrary:_setupToggle()
         if UserInputService:GetFocusedTextBox() then return end
         if input.UserInputType == Enum.UserInputType.Keyboard and 
            input.KeyCode == self.toggleKey then
-            self.frame.Visible = not self.frame.Visible
+            self.screenGui.Enabled = not self.screenGui.Enabled
             
             -- Reset all toggle hover states when toggling UI visibility
             for _, tab in ipairs(self.tabs) do
@@ -572,23 +570,21 @@ function UILibrary:_selectTab(tab)
     self:_moveIndicatorTo(tab.button)
 end
 
--- Button (SIMPLIFIED FOR RELIABLE setText)
+-- Button (NOW WITH setText)
 function UILibrary:addButton(config)
     config = config or {}
     local text = config.text or "Button"
     local callback = config.callback or function() end
     
-    -- Simple button - no complex layering
     local button = Instance.new("TextButton")
     button.Size = UDim2.new(1, 0, 0, config.height or 40)
     button.BackgroundColor3 = self.theme.surface
     button.BorderColor3 = config.borderColor or self.theme.accent2
     button.BorderSizePixel = 2
     button.Text = text
-    button.TextColor3 = config.textColor or self.theme.text
+    button.TextColor3 = config.textColor or self.theme.accent2
     button.Font = Enum.Font.Code
     button.TextSize = config.textSize or 12
-    button.AutoButtonColor = false
     button.LayoutOrder = config.layoutOrder or (#self.elements + 1)
     button.Parent = self.content
     
@@ -596,29 +592,16 @@ function UILibrary:addButton(config)
     corner.CornerRadius = UDim.new(0, 4)
     corner.Parent = button
     
-    -- Simple hover effect
-    local baseColor = self.theme.surface
-    local hoverColor = baseColor:Lerp(Color3.fromRGB(255, 255, 255), 0.1)
-    
-    button.MouseEnter:Connect(function()
-        button.BackgroundColor3 = hoverColor
-    end)
-    
-    button.MouseLeave:Connect(function()
-        button.BackgroundColor3 = baseColor
-    end)
+    createHoverEffect(button, self.theme.surface)
     
     button.MouseButton1Click:Connect(callback)
     
     table.insert(self.elements, {type = "button", element = button})
     
-    -- Return API with direct setText access
+    -- Return API with setText
     return {
         setText = function(newText)
             button.Text = newText
-        end,
-        getText = function()
-            return button.Text
         end,
         element = button
     }
@@ -631,7 +614,7 @@ function UILibrary:addActionToggle(config)
     local callback = config.callback or function() end
     
     local row = Instance.new("Frame")
-    row.Size = UDim2.new(1, 0, 0, 24)
+    row.Size = UDim2.new(1, 0, 0, config.height or 30)
     row.BackgroundTransparency = 1
     row.LayoutOrder = config.layoutOrder or (#self.elements + 1)
     row.Parent = self.content
@@ -678,8 +661,9 @@ function UILibrary:addActionToggle(config)
             -- Turn green
             checkbox.BackgroundColor3 = self.theme.toggleOn
             checkbox.BorderColor3 = self.theme.toggleOn
-            checkbox.TextColor3 = self.theme.background
             checkbox.Text = "✓"
+            checkbox.TextColor3 = self.theme.background
+            checkbox.TextScaled = true
             
             task.wait(1)
             
@@ -711,10 +695,11 @@ end
 function UILibrary:addToggle(config)
     config = config or {}
     local text = config.text or "Toggle"
+    local default = config.default or false
     local callback = config.callback or function() end
     
     local row = Instance.new("Frame")
-    row.Size = UDim2.new(1, 0, 0, 24)
+    row.Size = UDim2.new(1, 0, 0, config.height or 30)
     row.BackgroundTransparency = 1
     row.LayoutOrder = config.layoutOrder or (#self.elements + 1)
     row.Parent = self.content
@@ -748,7 +733,7 @@ function UILibrary:addToggle(config)
     label.TextYAlignment = Enum.TextYAlignment.Center
     label.Parent = row
     
-    local state = false
+    local state = default
     updateCheckboxAppearance(checkbox, state, self.theme)
     
     -- Simple hover effect
@@ -1493,160 +1478,284 @@ function UILibrary:destroy()
     end
 end
 
--- Notification System
-function UILibrary:createNotificationContainer()
-    if self.notificationContainer then return self.notificationContainer end
-    
-    local container = Instance.new("Frame")
-    container.Name = "NotificationContainer"
-    container.Size = UDim2.new(0, 320, 0, 200)
-    container.Position = UDim2.new(1, -330, 1, -210)
-    container.BackgroundTransparency = 1
-    container.Parent = self.screenGui
-    
-    local layout = Instance.new("UIListLayout")
-    layout.SortOrder = Enum.SortOrder.LayoutOrder
-    layout.Padding = UDim.new(0, 8)
-    layout.VerticalAlignment = Enum.VerticalAlignment.Bottom
-    layout.Parent = container
-    
-    self.notificationContainer = container
-    return container
-end
-
-function UILibrary:showNotification(text, duration)
-    duration = duration or 4
-    
-    local container = self:createNotificationContainer()
-    
-    -- Calculate text size dynamically
-    local TextService = game:GetService("TextService")
-    local maxWidth = 300 -- Account for padding (320 - 20)
-    local textSize = TextService:GetTextSize(
-        text,
-        12,
-        Enum.Font.Code,
-        Vector2.new(maxWidth, math.huge)
-    )
-    
-    -- Base height: padding (16) + minimum readable area, plus text height
-    local baseHeight = 34 -- padding (8 top + 8 bottom) + timer bar (4) + extra spacing (14)
-    local contentHeight = textSize.Y + 20 -- text height + extra padding for readability
-    local totalHeight = math.max(50, baseHeight + contentHeight)
-    
-    local notification = Instance.new("Frame")
-    notification.Size = UDim2.new(1, 0, 0, totalHeight)
-    notification.BackgroundColor3 = self.theme.background
-    notification.BorderColor3 = self.theme.accent2
-    notification.BorderSizePixel = 2
-    notification.Parent = container
-    
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 6)
-    corner.Parent = notification
-    
-    local padding = Instance.new("UIPadding")
-    padding.PaddingLeft = UDim.new(0, 10)
-    padding.PaddingRight = UDim.new(0, 10)
-    padding.PaddingTop = UDim.new(0, 8)
-    padding.PaddingBottom = UDim.new(0, 8)
-    padding.Parent = notification
-    
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(1, 0, 1, -12) -- Leave space for timer bar
-    label.BackgroundTransparency = 1
-    label.Text = text
-    label.TextColor3 = self.theme.text
-    label.Font = Enum.Font.Code
-    label.TextSize = 12
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.TextYAlignment = Enum.TextYAlignment.Top
-    label.TextWrapped = true
-    label.Parent = notification
-    
-    local timerBar = Instance.new("Frame")
-    timerBar.Size = UDim2.new(1, 0, 0, 4)
-    timerBar.Position = UDim2.new(0, 0, 1, -4)
-    timerBar.BackgroundColor3 = self.theme.accent2
-    timerBar.Parent = notification
-    
-    local timerCorner = Instance.new("UICorner")
-    timerCorner.CornerRadius = UDim.new(0, 2)
-    timerCorner.Parent = timerBar
-    
-    task.spawn(function()
-        task.wait(0.05)
-        local startSize = timerBar.Size
-        local targetX = 0
-        local steps = duration * 20
-        local stepDelay = 0.05
-        
-        for i = 1, steps do
-            if not timerBar or not timerBar.Parent then return end
-            local progress = 1 - (i / steps)
-            timerBar.Size = UDim2.new(progress, 0, 0, 4)
-            task.wait(stepDelay)
-        end
-        
-        if timerBar and timerBar.Parent then
-            local fadeInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-            TweenService:Create(notification, fadeInfo, {BackgroundTransparency = 1}):Play()
-            TweenService:Create(label, fadeInfo, {TextTransparency = 1}):Play()
-            TweenService:Create(timerBar, fadeInfo, {BackgroundTransparency = 1}):Play()
-            
-            task.wait(0.3)
-            notification:Destroy()
-        end
-    end)
-    
-    return notification
-end
-
-function UILibrary:addNoteButton(config)
-    config = config or {}
-    local text = config.text or "Show Notification"
-    local noteText = config.noteText or "This is a notification!"
-    local noteCallback = config.noteCallback or nil
-    local duration = config.duration or 4
-    
-    local button = Instance.new("TextButton")
-    button.Size = UDim2.new(1, 0, 0, config.height or 40)
-    button.BackgroundColor3 = self.theme.surface
-    button.BorderColor3 = config.borderColor or self.theme.accent2
-    button.BorderSizePixel = 2
-    button.Text = text
-    button.TextColor3 = config.textColor or self.theme.accent2
-    button.Font = Enum.Font.Code
-    button.TextSize = config.textSize or 12
-    button.LayoutOrder = config.layoutOrder or (#self.elements + 1)
-    button.Parent = self.content
-    
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 4)
-    corner.Parent = button
-    
-    createHoverEffect(button, self.theme.surface)
-    
-    button.MouseButton1Click:Connect(function()
-        local displayText = noteText
-        if noteCallback and type(noteCallback) == "function" then
-            displayText = noteCallback()
-        end
-        self:showNotification(displayText, duration)
-    end)
-    
-    table.insert(self.elements, {type = "button", element = button})
-    
-    return {
-        setText = function(newText)
-            button.Text = newText
-        end,
-        setNote = function(newNote, newDuration)
-            noteText = newNote
-            duration = newDuration or duration
-        end,
-        element = button
-    }
-end
-
 return UILibrary
+
+--[[
+    USAGE EXAMPLES - Updated UI Library Features
+    
+    This file demonstrates all the NEW features added to the UI library:
+    1. setText() support for Buttons, Sliders, Toggles, Action Toggles, Type Switchers, Dropdowns
+    2. Decimal support for sliders
+    3. Custom text labels for sliders (optional)
+]]
+
+local UILibrary = loadstring(game:HttpGet("https://raw.githubusercontent.com/DrippyImposter/UI-party-2/refs/heads/main/UI"))() -- Adjust path as needed
+
+-- Create the main window
+local ui = UILibrary.new({
+    title = "Enhanced UI Library Demo",
+    toggleKey = Enum.KeyCode.H
+})
+
+-- Create a tab
+local tab = ui:addTab("Examples")
+
+-- ========================================
+-- BUTTONS
+-- ========================================
+
+-- Simple button with setText
+local button1 = tab:addButton({
+    text = "Simple Button",
+    callback = function()
+        print("Simple button clicked!")
+    end
+})
+
+-- Button that changes its own text when clicked (SAFE way)
+-- Create button WITHOUT callback first
+local button2 = tab:addButton({
+    text = "Click to Change Text"
+})
+
+-- Then connect the callback AFTER the variable is assigned
+button2.element.MouseButton1Click:Connect(function()
+    button2.setText("Text Changed!")
+end)
+
+-- Button with external setText after delay
+local button3 = tab:addButton({
+    text = "Wait 5 seconds...",
+    callback = function()
+        print("Button 3 clicked!")
+    end
+})
+
+task.spawn(function()
+    task.wait(5)
+    button3.setText("5 seconds passed!")
+end)
+
+-- ========================================
+-- TOGGLES
+-- ========================================
+
+local toggle1 = tab:addToggle({
+    text = "Enable Feature",
+    default = false,
+    callback = function(state)
+        print("Feature enabled:", state)
+    end
+})
+
+-- Safely change toggle text after creation
+task.spawn(function()
+    task.wait(1)
+    toggle1.setText("Feature Toggle (Updated)")
+end)
+
+-- ========================================
+-- ACTION TOGGLES
+-- ========================================
+
+local action1 = tab:addActionToggle({
+    text = "Execute Action",
+    callback = function()
+        print("Action executed!")
+    end
+})
+
+-- Change label immediately (safe)
+task.spawn(function()
+    action1.setText("Run Command")
+end)
+
+-- ========================================
+-- SLIDERS - Basic with Decimals
+-- ========================================
+
+local slider1 = tab:addSlider({
+    text = "Speed",
+    min = 0,
+    max = 1,
+    default = 0.5,
+    decimals = 2,  -- 2 decimal places
+    suffix = "x",
+    callback = function(value)
+        print("Speed changed to:", value)
+    end
+})
+
+-- ========================================
+-- SLIDERS - With Custom Labels
+-- ========================================
+
+local slider2 = tab:addSlider({
+    text = "Delay",
+    min = 0.05,
+    max = 2,
+    default = 1,
+    decimals = 2,
+    suffix = "s",
+    labels = {
+        {0.05, "Very Fast"},
+        {0.3, "Fast"},
+        {0.8, "Normal"},
+        {1.3, "Slow"},
+        {1.8, "Very Slow"}
+    },
+    callback = function(value)
+        print("Delay:", value)
+    end
+})
+-- Output example: "Delay: Very Fast (0.05s)" or "Delay: Normal (1.00s)"
+
+local slider3 = tab:addSlider({
+    text = "Cooldown",
+    min = 0.1,
+    max = 10,
+    default = 1,
+    decimals = 1,
+    suffix = "s",
+    labels = {
+        {0.1, "Instant"},
+        {1, "Quick"},
+        {3, "Medium"},
+        {6, "Long"},
+        {9, "Very Long"}
+    },
+    callback = function(value)
+        print("Cooldown:", value)
+    end
+})
+
+local slider4 = tab:addSlider({
+    text = "Graphics Quality",
+    min = 1,
+    max = 5,
+    default = 3,
+    decimals = 0,  -- Integers only
+    labels = {
+        {1, "Low"},
+        {2, "Medium"},
+        {3, "High"},
+        {4, "Ultra"},
+        {5, "Maximum"}
+    },
+    callback = function(value)
+        print("Graphics quality:", value)
+    end
+})
+
+-- ========================================
+-- SLIDERS - Regular (No Labels)
+-- ========================================
+
+local slider5 = tab:addSlider({
+    text = "Volume",
+    min = 0,
+    max = 100,
+    default = 50,
+    decimals = 0,
+    suffix = "%",
+    callback = function(value)
+        print("Volume:", value)
+    end
+})
+
+local slider6 = tab:addSlider({
+    text = "Price",
+    min = 0,
+    max = 999.99,
+    default = 19.99,
+    decimals = 2,
+    suffix = " USD",
+    callback = function(value)
+        print("Price:", value)
+    end
+})
+
+-- ========================================
+-- DROPDOWNS
+-- ========================================
+
+local dropdown1 = tab:addDropdown({
+    label = "Select Mode",
+    options = {"Easy", "Normal", "Hard"},
+    default = "Normal",
+    callback = function(option)
+        print("Selected mode:", option)
+    end
+})
+
+task.spawn(function()
+    task.wait(2)
+    dropdown1.setText("Difficulty Level")
+end)
+
+local dropdown2 = tab:addDropdown({
+    label = "Weapon Type",
+    options = {"Sword", "Axe", "Bow", "Staff"},
+    default = "Sword",
+    callback = function(option)
+        print("Selected weapon:", option)
+    end
+})
+
+-- ========================================
+-- TYPE SWITCHERS
+-- ========================================
+
+local switcher1 = tab:addTypeSwitcher({
+    types = {"Pokeball", "Greatball", "Ultraball"},
+    default = 1,
+    callback = function(type, index)
+        print("Switched to:", type, "at index", index)
+    end
+})
+
+local switcher2 = tab:addTypeSwitcher({
+    types = {"Red", "Blue", "Green"},
+    default = 2,
+    callback = function(type, index)
+        print("Color:", type)
+    end
+})
+
+-- ========================================
+-- LABELS & INFO CONTAINERS
+-- ========================================
+
+local label1 = tab:addLabel({
+    text = "This is a label"
+})
+
+task.spawn(function()
+    task.wait(3)
+    label1.setText("Label text updated!")
+end)
+
+local info1 = tab:addInfoContainer({
+    text = "This is an info container.\nIt can display multiple lines of text.\nUseful for instructions or status.",
+    height = 80
+})
+
+task.spawn(function()
+    task.wait(4)
+    info1.setText("Info updated!\nNew information displayed here.")
+end)
+
+-- ========================================
+-- TEXTBOXES
+-- ========================================
+
+local textbox1 = tab:addTextbox({
+    placeholder = "Enter your name...",
+    default = "",
+    callback = function(text, enterPressed)
+        print("Text entered:", text, "| Enter pressed:", enterPressed)
+    end
+})
+
+print("✅ UI Library loaded successfully with all features!")
+print("Press H to toggle the UI")
