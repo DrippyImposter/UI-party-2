@@ -608,12 +608,8 @@ function UILibrary:addButton(config)
         button.BackgroundColor3 = baseColor
     end)
     
-    button.MouseButton1Click:Connect(callback)
-    
-    table.insert(self.elements, {type = "button", element = button})
-    
-    -- Return API with direct setText access
-    return {
+    -- Store button API for callback access
+    local buttonAPI = {
         setText = function(newText)
             button.Text = newText
         end,
@@ -622,6 +618,15 @@ function UILibrary:addButton(config)
         end,
         element = button
     }
+    
+    button.MouseButton1Click:Connect(function()
+        callback(buttonAPI)
+    end)
+    
+    table.insert(self.elements, {type = "button", element = button})
+    
+    -- Return API with direct setText access
+    return buttonAPI
 end
 
 -- Action Toggle (NOW WITH setText)
