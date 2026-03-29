@@ -605,7 +605,7 @@ function UILibrary:addButton(config)
     button.Position = UDim2.new(0, 2, 0, 2)
     button.BackgroundColor3 = self.theme.dropdown
     button.BorderSizePixel = 0
-    button.Text = text
+    button.Text = ""  -- Keep button text empty since we use TextLabel
     button.TextTransparency = 1
     button.AutoButtonColor = false
     button.Parent = container
@@ -677,13 +677,27 @@ function UILibrary:addButton(config)
     
     button.MouseButton1Click:Connect(callback)
     
-    table.insert(self.elements, {type = "button", element = container})
+    table.insert(self.elements, {type = "button", element = container, textLabel = textLabel})
     
+    -- Return API with setText that directly references the textLabel
     return {
         setText = function(newText)
-            textLabel.Text = newText
+            -- Find the TextLabel child if it exists
+            local label = button:FindFirstChild("TextLabel")
+            if label and label:IsA("TextLabel") then
+                label.Text = newText
+            end
         end,
-        element = button
+        getText = function()
+            local label = button:FindFirstChild("TextLabel")
+            if label and label:IsA("TextLabel") then
+                return label.Text
+            end
+            return ""
+        end,
+        element = button,
+        container = container,
+        textLabel = textLabel
     }
 end
 
