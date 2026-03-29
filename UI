@@ -491,6 +491,9 @@ function UILibrary:_createIntro()
         -- Wait for fade to complete, then destroy intro
         fadeTweens[1].Completed:Wait()
         introFrame:Destroy()
+        
+        -- Mark intro as complete so toggle key works
+        self.introComplete = true
     end)
 end
 
@@ -552,6 +555,9 @@ function UILibrary:_setupToggle()
         if UserInputService:GetFocusedTextBox() then return end
         if input.UserInputType == Enum.UserInputType.Keyboard and 
            input.KeyCode == self.toggleKey then
+            -- Don't toggle if intro is still playing
+            if not self.introComplete then return end
+            
             self.frame.Visible = not self.frame.Visible
             
             -- Reset all toggle hover states when toggling UI visibility
