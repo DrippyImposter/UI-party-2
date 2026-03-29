@@ -621,37 +621,7 @@ function UILibrary:addButton(config)
     textLabel.TextSize = config.textSize or 12
     textLabel.Parent = button
 
-    local _settingText = false
-    local function applyText(newText)
-        if _settingText then return end
-        _settingText = true
-
-        button.Text = newText
-
-        if button:GetAttribute("_UILibButtonText") ~= nil then
-            button:SetAttribute("_UILibButtonText", newText)
-        else
-            button:SetAttribute("_UILibButtonText", newText)
-        end
-
-        local function trySetText(obj)
-            if obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") then
-                obj.Text = newText
-            end
-        end
-
-        trySetText(button)
-        for _, d in ipairs(button:GetDescendants()) do
-            trySetText(d)
-        end
-
-        _settingText = false
-    end
-
-    button:GetPropertyChangedSignal("Text"):Connect(function()
-        if _settingText then return end
-        applyText(button.Text)
-    end)
+    local labelRef = textLabel
     
     local corner = Instance.new("UICorner")
     corner.CornerRadius = UDim.new(0, 4)
@@ -713,7 +683,8 @@ function UILibrary:addButton(config)
     -- Return API with setText (now updates TextLabel)
     return {
         setText = function(newText)
-            applyText(newText)
+            button.Text = newText
+            labelRef.Text = newText
         end,
         element = button
     }
