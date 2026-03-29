@@ -605,7 +605,8 @@ function UILibrary:addButton(config)
     button.Position = UDim2.new(0, 2, 0, 2)
     button.BackgroundColor3 = self.theme.dropdown
     button.BorderSizePixel = 0
-    button.Text = ""  -- Empty text, using TextLabel instead
+    button.Text = text
+    button.TextTransparency = 1
     button.AutoButtonColor = false
     button.Parent = container
     
@@ -619,6 +620,12 @@ function UILibrary:addButton(config)
     textLabel.Font = Enum.Font.GothamBold
     textLabel.TextSize = config.textSize or 12
     textLabel.Parent = button
+
+    local _settingText = false
+    button:GetPropertyChangedSignal("Text"):Connect(function()
+        if _settingText then return end
+        textLabel.Text = button.Text
+    end)
     
     local corner = Instance.new("UICorner")
     corner.CornerRadius = UDim.new(0, 4)
@@ -680,7 +687,10 @@ function UILibrary:addButton(config)
     -- Return API with setText (now updates TextLabel)
     return {
         setText = function(newText)
+            _settingText = true
+            button.Text = newText
             textLabel.Text = newText
+            _settingText = false
         end,
         element = button
     }
