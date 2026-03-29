@@ -621,7 +621,15 @@ function UILibrary:addButton(config)
     textLabel.TextSize = config.textSize or 12
     textLabel.Parent = button
 
-    local labelRef = textLabel
+    local _settingText = false
+    local function applyText(newText)
+        textLabel.Text = newText
+    end
+
+    button:GetPropertyChangedSignal("Text"):Connect(function()
+        if _settingText then return end
+        applyText(button.Text)
+    end)
     
     local corner = Instance.new("UICorner")
     corner.CornerRadius = UDim.new(0, 4)
@@ -680,11 +688,9 @@ function UILibrary:addButton(config)
     
     table.insert(self.elements, {type = "button", element = container})
     
-    -- Return API with setText (now updates TextLabel)
     return {
         setText = function(newText)
-            button.Text = newText
-            labelRef.Text = newText
+            textLabel.Text = newText
         end,
         element = button
     }
