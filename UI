@@ -23,8 +23,54 @@ local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
+local HttpService = game:GetService("HttpService")
 
 local Player = Players.LocalPlayer
+
+local function _getFs()
+    local wf = (writefile or (syn and syn.writefile) or (fluxus and fluxus.writefile) or nil)
+    local rf = (readfile or (syn and syn.readfile) or (fluxus and fluxus.readfile) or nil)
+    local df = (delfile or (syn and syn.delfile) or (fluxus and fluxus.delfile) or nil)
+    local isf = (isfile or (syn and syn.isfile) or (fluxus and fluxus.isfile) or nil)
+    local lf = (listfiles or (syn and syn.listfiles) or (fluxus and fluxus.listfiles) or nil)
+    local mf = (makefolder or (syn and syn.makefolder) or (fluxus and fluxus.makefolder) or nil)
+    local isfld = (isfolder or (syn and syn.isfolder) or (fluxus and fluxus.isfolder) or nil)
+    return wf, rf, df, isf, lf, mf, isfld
+end
+
+local function _ensureFolder(path)
+    local _, _, _, _, _, makefolderFn, isfolderFn = _getFs()
+    if not makefolderFn then return false end
+    if isfolderFn and isfolderFn(path) then return true end
+    local ok = pcall(function() makefolderFn(path) end)
+    return ok
+end
+
+local function _basename(path)
+    return tostring(path):match("[^/\\]+$") or tostring(path)
+end
+
+local function _sanitizeName(name)
+    name = tostring(name or "")
+    name = name:gsub("^%s+", ""):gsub("%s+$", "")
+    name = name:gsub("[^%w%-%_ ]", "")
+    name = name:gsub("%s+", " ")
+    return name
+end
+
+local function _getConfigDir(self)
+    local folder = (self and self.configFolder) or "UILibrary_Configs"
+    folder = _sanitizeName(folder)
+    if folder == "" then folder = "UILibrary_Configs" end
+    return folder
+end
+
+local function _getConfigPath(self, name)
+    local folder = _getConfigDir(self)
+    local clean = _sanitizeName(name)
+    if clean == "" then clean = "default" end
+    return folder .. "/" .. clean .. ".json"
+end
 
 -- Default theme
 local defaultTheme = {
@@ -87,6 +133,9 @@ function UILibrary.new(config)
     self.theme = config.theme or defaultTheme
     self.position = config.position or UDim2.new(0.5, -200, 0.5, -310)
     self.toggleKey = config.toggleKey or Enum.KeyCode.H
+    self.configFolder = config.configFolder or "UILibrary_Configs"
+    self.configGet = config.configGet
+    self.configSet = config.configSet
     
     -- Hardcoded window size: 400x620 for PC/tablet, 320x480 for phone
     self.size = UDim2.new(0, 400, 0, 620)
@@ -109,6 +158,82 @@ function UILibrary.new(config)
     self:_setupToggle()
     
     return self
+end
+
+function UILibrary:SaveConfig(name)
+    local writefileFn = _getFs()
+    local wf, _, _, _, _, _, _ = _getFs()
+    if not wf then return false end
+
+    local folder = _getConfigDir(self)
+    _ensureFolder(folder)
+
+    local payload = nil
+    if type(self.configGet) == "function" then
+        local ok, res = pcall(self.configGet)
+        if ok then payload = res end
+    end
+    if type(payload) ~= "table" then payload = {} end
+
+    local ok, data = pcall(function() return HttpService:JSONEncode(payload) end)
+    if not ok then return false end
+
+    local path = _getConfigPath(self, name)
+    local ok2 = pcall(function() wf(path, data) end)
+    return ok2
+end
+
+function UILibrary:LoadConfig(name)
+    local _, rf = _getFs()
+    local _, rf2, _, isf = _getFs()
+    local rfFn, isfileFn = rf2, isf
+    if not rfFn then return false end
+
+    local path = _getConfigPath(self, name)
+    if isfileFn and (not isfileFn(path)) then return false end
+
+    local ok, raw = pcall(function() return rfFn(path) end)
+    if not ok or not raw then return false end
+
+    local ok2, decoded = pcall(function() return HttpService:JSONDecode(raw) end)
+    if not ok2 or type(decoded) ~= "table" then return false end
+
+    if type(self.configSet) == "function" then
+        pcall(self.configSet, decoded)
+        return true
+    end
+    return false
+end
+
+function UILibrary:DeleteConfig(name)
+    local _, _, df, isf = _getFs()
+    if not df then return false end
+
+    local path = _getConfigPath(self, name)
+    if isf and (not isf(path)) then return false end
+
+    local ok = pcall(function() df(path) end)
+    return ok
+end
+
+function UILibrary:GetConfigs()
+    local _, _, _, _, lf = _getFs()
+    if not lf then return {} end
+
+    local folder = _getConfigDir(self)
+    _ensureFolder(folder)
+
+    local ok, files = pcall(function() return lf(folder) end)
+    if not ok or type(files) ~= "table" then return {} end
+
+    local configs = {}
+    for _, p in ipairs(files) do
+        local base = _basename(p)
+        local name = base:gsub("%.json$", "")
+        if name ~= "" then table.insert(configs, name) end
+    end
+    table.sort(configs)
+    return configs
 end
 
 function UILibrary:_createBase()
