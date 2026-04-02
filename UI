@@ -503,9 +503,39 @@ function UILibrary:_setupDragging()
     local dragStart = nil
     local startPos = nil
     
-    local function update(input)
+    -- Smooth dragging variables
+    local targetPos = nil
+    local currentPos = self.frame.Position
+    local smoothness = 0.15 -- Lower = smoother/slower, Higher = snappier/faster
+    
+    local RunService = game:GetService("RunService")
+    local smoothConnection = nil
+    
+    local function startSmoothDrag()
+        if smoothConnection then return end
+        smoothConnection = RunService.Heartbeat:Connect(function()
+            if not targetPos then return end
+            -- Lerp current position toward target
+            local lerp = function(a, b, t)
+                return a + (b - a) * t
+            end
+            local newX = lerp(currentPos.X.Offset, targetPos.X.Offset, smoothness)
+            local newY = lerp(currentPos.Y.Offset, targetPos.Y.Offset, smoothness)
+            currentPos = UDim2.new(startPos.X.Scale, newX, startPos.Y.Scale, newY)
+            self.frame.Position = currentPos
+        end)
+    end
+    
+    local function stopSmoothDrag()
+        if smoothConnection then
+            smoothConnection:Disconnect()
+            smoothConnection = nil
+        end
+    end
+    
+    local function updateTarget(input)
         local delta = input.Position - dragStart
-        self.frame.Position = UDim2.new(
+        targetPos = UDim2.new(
             startPos.X.Scale, startPos.X.Offset + delta.X,
             startPos.Y.Scale, startPos.Y.Offset + delta.Y
         )
@@ -519,12 +549,17 @@ function UILibrary:_setupDragging()
             dragging = true
             dragStart = input.Position
             startPos = self.frame.Position
+            currentPos = startPos
+            targetPos = startPos
             dragInput = input
+            
+            startSmoothDrag()
             
             input.Changed:Connect(function()
                 if input.UserInputState == Enum.UserInputState.End then
                     dragging = false
                     dragInput = nil
+                    stopSmoothDrag()
                 end
             end)
         end
@@ -540,11 +575,11 @@ function UILibrary:_setupDragging()
     UserInputService.InputChanged:Connect(function(input)
         if not dragging then return end
         if input == dragInput then
-            update(input)
+            updateTarget(input)
             return
         end
         if input.UserInputType == Enum.UserInputType.Touch then
-            update(input)
+            updateTarget(input)
         end
     end)
 end
