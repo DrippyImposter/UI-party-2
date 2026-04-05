@@ -1828,4 +1828,362 @@ function UILibrary:addNoteButton(config)
     }
 end
 
+-- SIMPLIFIED API METHODS (Clean one-line syntax)
+-- These methods allow creating UI elements with minimal code
+
+-- CreateButton('Heal 💟', function() ... end)
+function UILibrary:CreateButton(name, callback)
+    return self:addButton({
+        text = name,
+        callback = callback
+    })
+end
+
+-- CreateToggle('Noclip 🚶', false, Color3.fromRGB(0, 125, 255), 0.25, function(Value) ... end)
+function UILibrary:CreateToggle(name, default, color, transparency, callback)
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1, 0, 0, 24)
+    row.BackgroundTransparency = 1
+    row.LayoutOrder = #self.elements + 1
+    row.Parent = self.content
+    
+    local checkbox = Instance.new("TextButton")
+    checkbox.Size = UDim2.new(0, 24, 0, 24)
+    checkbox.Position = UDim2.new(0, 4, 0, 3)
+    checkbox.BackgroundColor3 = self.theme.dropdown
+    checkbox.BorderColor3 = color or self.theme.accent
+    checkbox.BorderSizePixel = 1
+    checkbox.Text = ""
+    checkbox.Font = Enum.Font.Code
+    checkbox.TextSize = 16
+    checkbox.TextScaled = true
+    checkbox.TextColor3 = self.theme.toggleOn
+    checkbox.Parent = row
+    
+    local checkCorner = Instance.new("UICorner")
+    checkCorner.CornerRadius = UDim.new(0, 4)
+    checkCorner.Parent = checkbox
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -32, 1, 0)
+    label.Position = UDim2.new(0, 32, 0, 0)
+    label.BackgroundTransparency = 1
+    label.Text = name
+    label.TextColor3 = self.theme.text
+    label.Font = Enum.Font.Code
+    label.TextSize = 12
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextYAlignment = Enum.TextYAlignment.Center
+    label.Parent = row
+    
+    local state = default or false
+    updateCheckboxAppearance(checkbox, state, self.theme)
+    
+    checkbox.MouseButton1Click:Connect(function()
+        state = not state
+        task.spawn(function()
+            checkbox.BackgroundColor3 = color or self.theme.toggleOn
+            checkbox.BorderColor3 = color or self.theme.toggleOn
+            checkbox.TextColor3 = self.theme.background
+            checkbox.Text = "✓"
+            task.wait(0.3)
+            updateCheckboxAppearance(checkbox, state, self.theme)
+        end)
+        callback(state)
+    end)
+    
+    table.insert(self.elements, {type = "toggle", element = row, checkbox = checkbox})
+    
+    return {
+        setState = function(newState)
+            state = newState
+            updateCheckboxAppearance(checkbox, state, self.theme)
+        end,
+        getState = function()
+            return state
+        end,
+        setText = function(newText)
+            label.Text = newText
+        end
+    }
+end
+
+-- CreateDropdown('Set Hoverboard 🛹', {'option1', 'option2'}, nil, 0.25, function(Value) ... end)
+function UILibrary:CreateDropdown(name, options, default, transparency, callback)
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1, 0, 0, 26)
+    row.BackgroundTransparency = 1
+    row.LayoutOrder = #self.elements + 1
+    row.Parent = self.content
+    
+    local dropdownLabel = Instance.new("TextLabel")
+    dropdownLabel.Size = UDim2.new(0.5, 0, 1, 0)
+    dropdownLabel.BackgroundTransparency = 1
+    dropdownLabel.Text = name
+    dropdownLabel.TextColor3 = self.theme.text
+    dropdownLabel.Font = Enum.Font.Code
+    dropdownLabel.TextSize = 12
+    dropdownLabel.TextXAlignment = Enum.TextXAlignment.Left
+    dropdownLabel.Parent = row
+    
+    local dropdown = Instance.new("TextButton")
+    dropdown.Size = UDim2.new(0.48, 0, 1, 0)
+    dropdown.Position = UDim2.new(0.52, 0, 0, 0)
+    dropdown.BackgroundColor3 = self.theme.dropdown
+    dropdown.BorderColor3 = self.theme.accent
+    dropdown.BorderSizePixel = 1
+    dropdown.Text = default or options[1] or "Select"
+    dropdown.TextColor3 = self.theme.text
+    dropdown.Font = Enum.Font.Code
+    dropdown.TextSize = 12
+    dropdown.Parent = row
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 4)
+    corner.Parent = dropdown
+    
+    local menu = Instance.new("Frame")
+    menu.Size = UDim2.new(1, 0, 0, 0)
+    menu.Position = UDim2.new(0, 0, 1, 6)
+    menu.BackgroundColor3 = self.theme.surface
+    menu.BorderColor3 = self.theme.accent2
+    menu.BorderSizePixel = 1
+    menu.Visible = false
+    menu.ZIndex = 100
+    menu.Parent = dropdown
+    
+    local menuLayout = Instance.new("UIListLayout")
+    menuLayout.Padding = UDim.new(0, 4)
+    menuLayout.Parent = menu
+    
+    local currentOption = default or options[1]
+    for _, option in ipairs(options or {}) do
+        local optionBtn = Instance.new("TextButton")
+        optionBtn.Size = UDim2.new(1, -10, 0, 24)
+        optionBtn.Position = UDim2.new(0, 5, 0, 0)
+        optionBtn.BackgroundColor3 = self.theme.surface
+        optionBtn.BorderSizePixel = 0
+        optionBtn.Text = option
+        optionBtn.TextColor3 = self.theme.text
+        optionBtn.Font = Enum.Font.Code
+        optionBtn.TextSize = 12
+        optionBtn.ZIndex = 101
+        optionBtn.Parent = menu
+        
+        optionBtn.MouseButton1Click:Connect(function()
+            currentOption = option
+            dropdown.Text = option
+            menu.Visible = false
+            callback(option)
+        end)
+        
+        createHoverEffect(optionBtn, self.theme.surface)
+    end
+    
+    menuLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        menu.Size = UDim2.new(1, 0, 0, menuLayout.AbsoluteContentSize.Y + 8)
+    end)
+    
+    dropdown.MouseButton1Click:Connect(function()
+        menu.Visible = not menu.Visible
+    end)
+    
+    table.insert(self.elements, {type = "dropdown", element = row, dropdown = dropdown, menu = menu})
+    
+    return {
+        setOption = function(option)
+            currentOption = option
+            dropdown.Text = option
+        end,
+        getOption = function()
+            return currentOption
+        end,
+        setText = function(newText)
+            dropdownLabel.Text = newText
+        end
+    }
+end
+
+-- CreateTextbox('Dupe Items', "Amount", function(Value) ... end)
+function UILibrary:CreateTextbox(name, placeholder, callback)
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, 0, 0, 20)
+    label.BackgroundTransparency = 1
+    label.Text = name
+    label.TextColor3 = self.theme.text
+    label.Font = Enum.Font.Code
+    label.TextSize = 12
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.LayoutOrder = #self.elements + 1
+    label.Parent = self.content
+    
+    local textbox = Instance.new("TextBox")
+    textbox.Size = UDim2.new(1, 0, 0, 35)
+    textbox.BackgroundColor3 = self.theme.dropdown
+    textbox.BorderColor3 = self.theme.accent
+    textbox.BorderSizePixel = 1
+    textbox.PlaceholderText = placeholder or "Enter text..."
+    textbox.Text = ""
+    textbox.TextColor3 = self.theme.text
+    textbox.Font = Enum.Font.Code
+    textbox.TextSize = 12
+    textbox.TextXAlignment = Enum.TextXAlignment.Left
+    textbox.LayoutOrder = #self.elements + 2
+    textbox.Parent = self.content
+    
+    local padding = Instance.new("UIPadding")
+    padding.PaddingLeft = UDim.new(0, 10)
+    padding.Parent = textbox
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 4)
+    corner.Parent = textbox
+    
+    textbox.Focused:Connect(function()
+        textbox.BorderColor3 = self.theme.accent2
+    end)
+    
+    textbox.FocusLost:Connect(function(enter)
+        textbox.BorderColor3 = self.theme.accent
+        callback(textbox.Text, enter)
+    end)
+    
+    table.insert(self.elements, {type = "textbox", element = textbox})
+    
+    return {
+        getText = function()
+            return textbox.Text
+        end,
+        setText = function(newText)
+            textbox.Text = newText
+        end
+    }
+end
+
+-- CreateLabel('My Label')
+function UILibrary:CreateLabel(name)
+    return self:addLabel({
+        text = name
+    })
+end
+
+-- CreateSlider('Walk Speed', 10, 30, 16, function(Value) ... end)
+function UILibrary:CreateSlider(name, min, max, default, callback)
+    return self:addSlider({
+        text = name,
+        min = min,
+        max = max,
+        default = default,
+        callback = callback
+    })
+end
+
+-- Section Support - Creates a collapsible section
+function UILibrary:CreateSection(name)
+    local section = {}
+    section.name = name
+    section.elements = {}
+    section.parent = self
+    
+    -- Section header
+    local header = Instance.new("TextButton")
+    header.Size = UDim2.new(1, 0, 0, 30)
+    header.BackgroundColor3 = self.theme.surface
+    header.BorderColor3 = self.theme.accent
+    header.BorderSizePixel = 1
+    header.Text = "▶ " .. name
+    header.TextColor3 = self.theme.accent
+    header.Font = Enum.Font.Code
+    header.TextSize = 12
+    header.TextXAlignment = Enum.TextXAlignment.Left
+    header.LayoutOrder = #self.elements + 1
+    header.Parent = self.content
+    
+    local headerPadding = Instance.new("UIPadding")
+    headerPadding.PaddingLeft = UDim.new(0, 10)
+    headerPadding.Parent = header
+    
+    local headerCorner = Instance.new("UICorner")
+    headerCorner.CornerRadius = UDim.new(0, 4)
+    headerCorner.Parent = header
+    
+    -- Section content container
+    local content = Instance.new("Frame")
+    content.Size = UDim2.new(1, 0, 0, 0)
+    content.BackgroundTransparency = 1
+    content.BorderSizePixel = 0
+    content.Visible = false
+    content.LayoutOrder = #self.elements + 2
+    content.Parent = self.content
+    
+    local contentLayout = Instance.new("UIListLayout")
+    contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    contentLayout.Padding = UDim.new(0, 6)
+    contentLayout.Parent = content
+    
+    local expanded = false
+    header.MouseButton1Click:Connect(function()
+        expanded = not expanded
+        content.Visible = expanded
+        header.Text = (expanded and "▼ " or "▶ ") .. name
+        
+        if expanded then
+            task.wait()
+            content.Size = UDim2.new(1, 0, 0, contentLayout.AbsoluteContentSize.Y)
+        else
+            content.Size = UDim2.new(1, 0, 0, 0)
+        end
+    end)
+    
+    table.insert(self.elements, {type = "section", element = header, content = content})
+    
+    -- Create simplified methods for the section
+    function section:CreateButton(buttonName, buttonCallback)
+        local btn = section.parent:addButton({
+            text = buttonName,
+            callback = buttonCallback
+        })
+        btn.element.Parent = content
+        table.insert(section.elements, btn)
+        return btn
+    end
+    
+    function section:CreateToggle(toggleName, toggleDefault, toggleColor, toggleTransparency, toggleCallback)
+        local toggle = section.parent:CreateToggle(toggleName, toggleDefault, toggleColor, toggleTransparency, toggleCallback)
+        toggle.element.Parent = content
+        table.insert(section.elements, toggle)
+        return toggle
+    end
+    
+    function section:CreateDropdown(dropdownName, dropdownOptions, dropdownDefault, dropdownTransparency, dropdownCallback)
+        local dropdown = section.parent:CreateDropdown(dropdownName, dropdownOptions, dropdownDefault, dropdownTransparency, dropdownCallback)
+        dropdown.element.Parent = content
+        table.insert(section.elements, dropdown)
+        return dropdown
+    end
+    
+    function section:CreateTextbox(textboxName, textboxPlaceholder, textboxCallback)
+        local txt = section.parent:CreateTextbox(textboxName, textboxPlaceholder, textboxCallback)
+        txt.element.Parent = content
+        table.insert(section.elements, txt)
+        return txt
+    end
+    
+    function section:CreateLabel(labelName)
+        local lbl = section.parent:CreateLabel(labelName)
+        lbl.element.Parent = content
+        table.insert(section.elements, lbl)
+        return lbl
+    end
+    
+    function section:CreateSlider(sliderName, sliderMin, sliderMax, sliderDefault, sliderCallback)
+        local sld = section.parent:CreateSlider(sliderName, sliderMin, sliderMax, sliderDefault, sliderCallback)
+        sld.element.Parent = content
+        table.insert(section.elements, sld)
+        return sld
+    end
+    
+    return section
+end
+
 return UILibrary
