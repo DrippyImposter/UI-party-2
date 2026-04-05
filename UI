@@ -1447,7 +1447,7 @@ function UILibrary:addDropdown(config)
         menu.Size = UDim2.new(1, 0, 0, h)
     end)
     
-    -- SMART canvas resizing: Only expand if dropdown would overflow
+    -- Canvas resizing for dropdown visibility
     dropdown.MouseButton1Click:Connect(function()
         menu.Visible = not menu.Visible
         
@@ -1455,25 +1455,19 @@ function UILibrary:addDropdown(config)
         if not tab or not tab.content then return end
         
         if menu.Visible then
+            -- Wait for menu to render
             task.wait()
             
             local menuHeight = menu.AbsoluteSize.Y
             local baseHeight = tab.baseCanvasHeight or 200
             
-            -- Calculate if dropdown would overflow
-            local dropdownBottomPos = dropdown.AbsolutePosition.Y + dropdown.AbsoluteSize.Y + menuHeight
-            local contentBottomPos = tab.content.AbsolutePosition.Y + tab.content.AbsoluteSize.Y
+            -- Always expand canvas to accommodate dropdown menu
+            tab.content.CanvasSize = UDim2.new(0, 0, 0, baseHeight + menuHeight + 24)
             
-            -- Only expand if dropdown would go beyond visible area
-            if dropdownBottomPos > contentBottomPos then
-                local extraSpace = dropdownBottomPos - contentBottomPos + 24
-                tab.content.CanvasSize = UDim2.new(0, 0, 0, baseHeight + extraSpace)
-                
-                -- Scroll to show dropdown
-                local dropdownRelativePos = dropdown.AbsolutePosition.Y - tab.content.AbsolutePosition.Y
-                local scrollTarget = math.max(0, dropdownRelativePos - 20)
-                tab.content.CanvasPosition = Vector2.new(0, scrollTarget)
-            end
+            -- Scroll to show dropdown if it's near the bottom
+            local dropdownRelativePos = dropdown.AbsolutePosition.Y - tab.content.AbsolutePosition.Y
+            local scrollTarget = math.max(0, dropdownRelativePos - 20)
+            tab.content.CanvasPosition = Vector2.new(0, scrollTarget)
         else
             -- Restore original canvas size when dropdown closes
             local baseHeight = tab.baseCanvasHeight or 200
@@ -1986,6 +1980,29 @@ function UILibrary:CreateDropdown(name, options, default, transparency, callback
     
     dropdown.MouseButton1Click:Connect(function()
         menu.Visible = not menu.Visible
+        
+        local tab = self.currentTab or self
+        if not tab or not tab.content then return end
+        
+        if menu.Visible then
+            -- Wait for menu to render
+            task.wait()
+            
+            local menuHeight = menu.AbsoluteSize.Y
+            local baseHeight = tab.baseCanvasHeight or 200
+            
+            -- Always expand canvas to accommodate dropdown menu
+            tab.content.CanvasSize = UDim2.new(0, 0, 0, baseHeight + menuHeight + 24)
+            
+            -- Scroll to show dropdown if it's near the bottom
+            local dropdownRelativePos = dropdown.AbsolutePosition.Y - tab.content.AbsolutePosition.Y
+            local scrollTarget = math.max(0, dropdownRelativePos - 20)
+            tab.content.CanvasPosition = Vector2.new(0, scrollTarget)
+        else
+            -- Restore original canvas size when dropdown closes
+            local baseHeight = tab.baseCanvasHeight or 200
+            tab.content.CanvasSize = UDim2.new(0, 0, 0, baseHeight)
+        end
     end)
     
     table.insert(self.elements, {type = "dropdown", element = row, dropdown = dropdown, menu = menu})
@@ -2006,16 +2023,22 @@ end
 
 -- CreateTextbox('Dupe Items', "Amount", function(Value) ... end)
 function UILibrary:CreateTextbox(name, placeholder, callback)
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(1, 0, 0, 20)
-    label.BackgroundTransparency = 1
-    label.Text = name
-    label.TextColor3 = self.theme.text
-    label.Font = Enum.Font.Code
-    label.TextSize = 12
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.LayoutOrder = #self.elements + 1
-    label.Parent = self.content
+    -- Only create label if name is provided and not empty/whitespace
+    local hasLabel = name and name:match("%S") ~= nil
+    
+    local label = nil
+    if hasLabel then
+        label = Instance.new("TextLabel")
+        label.Size = UDim2.new(1, 0, 0, 20)
+        label.BackgroundTransparency = 1
+        label.Text = name
+        label.TextColor3 = self.theme.text
+        label.Font = Enum.Font.Code
+        label.TextSize = 12
+        label.TextXAlignment = Enum.TextXAlignment.Left
+        label.LayoutOrder = #self.elements + 1
+        label.Parent = self.content
+    end
     
     local textbox = Instance.new("TextBox")
     textbox.Size = UDim2.new(1, 0, 0, 35)
@@ -2028,7 +2051,7 @@ function UILibrary:CreateTextbox(name, placeholder, callback)
     textbox.Font = Enum.Font.Code
     textbox.TextSize = 12
     textbox.TextXAlignment = Enum.TextXAlignment.Left
-    textbox.LayoutOrder = #self.elements + 2
+    textbox.LayoutOrder = hasLabel and (#self.elements + 2) or (#self.elements + 1)
     textbox.Parent = self.content
     
     local padding = Instance.new("UIPadding")
