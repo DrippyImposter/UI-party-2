@@ -1447,7 +1447,7 @@ function UILibrary:addDropdown(config)
         menu.Size = UDim2.new(1, 0, 0, h)
     end)
     
-    -- Canvas resizing for dropdown visibility
+    -- Smart canvas resizing: Only expand if dropdown would overflow
     dropdown.MouseButton1Click:Connect(function()
         menu.Visible = not menu.Visible
         
@@ -1461,13 +1461,21 @@ function UILibrary:addDropdown(config)
             local menuHeight = menu.AbsoluteSize.Y
             local baseHeight = tab.baseCanvasHeight or 200
             
-            -- Always expand canvas to accommodate dropdown menu
-            tab.content.CanvasSize = UDim2.new(0, 0, 0, baseHeight + menuHeight + 24)
+            -- Calculate if dropdown menu would overflow the visible area
+            local dropdownBottomY = dropdown.AbsolutePosition.Y + dropdown.AbsoluteSize.Y
+            local menuBottomY = dropdownBottomY + menuHeight
+            local contentBottomY = tab.content.AbsolutePosition.Y + tab.content.AbsoluteSize.Y
             
-            -- Scroll to show dropdown if it's near the bottom
-            local dropdownRelativePos = dropdown.AbsolutePosition.Y - tab.content.AbsolutePosition.Y
-            local scrollTarget = math.max(0, dropdownRelativePos - 20)
-            tab.content.CanvasPosition = Vector2.new(0, scrollTarget)
+            -- Only expand if menu would go beyond visible area
+            if menuBottomY > contentBottomY then
+                -- Expand canvas to accommodate dropdown menu
+                tab.content.CanvasSize = UDim2.new(0, 0, 0, baseHeight + menuHeight + 24)
+                
+                -- Scroll to show dropdown
+                local dropdownRelativePos = dropdown.AbsolutePosition.Y - tab.content.AbsolutePosition.Y
+                local scrollTarget = math.max(0, dropdownRelativePos - 20)
+                tab.content.CanvasPosition = Vector2.new(0, scrollTarget)
+            end
         else
             -- Restore original canvas size when dropdown closes
             local baseHeight = tab.baseCanvasHeight or 200
@@ -1968,6 +1976,13 @@ function UILibrary:CreateDropdown(name, options, default, transparency, callback
             currentOption = option
             dropdown.Text = option
             menu.Visible = false
+            
+            -- Restore canvas size when option is selected
+            local tab = self.currentTab or self
+            if tab and tab.baseCanvasHeight then
+                tab.content.CanvasSize = UDim2.new(0, 0, 0, tab.baseCanvasHeight)
+            end
+            
             callback(option)
         end)
         
@@ -1991,13 +2006,21 @@ function UILibrary:CreateDropdown(name, options, default, transparency, callback
             local menuHeight = menu.AbsoluteSize.Y
             local baseHeight = tab.baseCanvasHeight or 200
             
-            -- Always expand canvas to accommodate dropdown menu
-            tab.content.CanvasSize = UDim2.new(0, 0, 0, baseHeight + menuHeight + 24)
+            -- Calculate if dropdown menu would overflow the visible area
+            local dropdownBottomY = dropdown.AbsolutePosition.Y + dropdown.AbsoluteSize.Y
+            local menuBottomY = dropdownBottomY + menuHeight
+            local contentBottomY = tab.content.AbsolutePosition.Y + tab.content.AbsoluteSize.Y
             
-            -- Scroll to show dropdown if it's near the bottom
-            local dropdownRelativePos = dropdown.AbsolutePosition.Y - tab.content.AbsolutePosition.Y
-            local scrollTarget = math.max(0, dropdownRelativePos - 20)
-            tab.content.CanvasPosition = Vector2.new(0, scrollTarget)
+            -- Only expand if menu would go beyond visible area
+            if menuBottomY > contentBottomY then
+                -- Expand canvas to accommodate dropdown menu
+                tab.content.CanvasSize = UDim2.new(0, 0, 0, baseHeight + menuHeight + 24)
+                
+                -- Scroll to show dropdown
+                local dropdownRelativePos = dropdown.AbsolutePosition.Y - tab.content.AbsolutePosition.Y
+                local scrollTarget = math.max(0, dropdownRelativePos - 20)
+                tab.content.CanvasPosition = Vector2.new(0, scrollTarget)
+            end
         else
             -- Restore original canvas size when dropdown closes
             local baseHeight = tab.baseCanvasHeight or 200
