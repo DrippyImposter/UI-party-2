@@ -686,6 +686,13 @@ function UILibrary:addTab(name)
     tab.content.Parent = self.innerBorder
     tab.content.Visible = false
     
+    -- Horizontal padding so button outlines/rounded corners aren't clipped
+    -- by the ScrollingFrame's edge (elements are sized 1,0 to fill content width)
+    tab.contentPadding = Instance.new("UIPadding")
+    tab.contentPadding.PaddingLeft = UDim.new(0, 4)
+    tab.contentPadding.PaddingRight = UDim.new(0, 4)
+    tab.contentPadding.Parent = tab.content
+
     -- Layout
     tab.layout = Instance.new("UIListLayout")
     tab.layout.SortOrder = Enum.SortOrder.LayoutOrder
