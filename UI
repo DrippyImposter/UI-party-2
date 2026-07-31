@@ -13,6 +13,8 @@
     - setText() support for: Buttons, Sliders, Action Toggles, Toggles, Type Switchers, Dropdowns
     - Decimal support for sliders (config.decimals)
     - Custom text labels for sliders (config.labels) - optional
+    - Dropdown menus scroll internally once the option list is long (default 8 visible),
+      overridable per dropdown with maxVisibleOptions / maxHeight
 ]]
 
 local UILibrary = {}
@@ -1352,6 +1354,85 @@ function UILibrary:addSlider(config)
     }
 end
 
+-- Shared dropdown menu builder.
+-- Options live inside a ScrollingFrame, so a long list (50+ entries) stays a usable height
+-- and scrolls internally instead of rendering as one giant frame that overflows the tab.
+-- Short lists are unaffected: the menu is sized to its content and scrolling stays off.
+local DROPDOWN_OPTION_HEIGHT = 24
+local DROPDOWN_OPTION_PADDING = 4
+local DROPDOWN_MAX_VISIBLE = 8
+
+local function measureDropdownHeight(count)
+    if count <= 0 then return 8 end
+    return (count * DROPDOWN_OPTION_HEIGHT) + ((count - 1) * DROPDOWN_OPTION_PADDING) + 8
+end
+
+-- Returns the menu frame. `onSelect(option)` fires when an option is clicked.
+-- config.maxVisibleOptions / config.maxHeight override how tall the menu is allowed to get.
+local function buildDropdownMenu(theme, dropdown, options, config, onSelect)
+    config = config or {}
+    options = options or {}
+
+    local contentHeight = measureDropdownHeight(#options)
+    local maxHeight = config.maxHeight or measureDropdownHeight(config.maxVisibleOptions or DROPDOWN_MAX_VISIBLE)
+    local needsScroll = contentHeight > maxHeight
+
+    local menu = Instance.new("Frame")
+    menu.Size = UDim2.new(1, 0, 0, math.min(contentHeight, maxHeight))
+    menu.Position = UDim2.new(0, 0, 1, 6)
+    menu.BackgroundColor3 = theme.surface
+    menu.BorderColor3 = theme.accent2
+    menu.BorderSizePixel = 1
+    menu.ClipsDescendants = true
+    menu.Visible = false
+    menu.ZIndex = 100
+    menu.Parent = dropdown
+
+    local list = Instance.new("ScrollingFrame")
+    list.Size = UDim2.new(1, 0, 1, 0)
+    list.BackgroundTransparency = 1
+    list.BorderSizePixel = 0
+    list.ScrollBarThickness = needsScroll and 4 or 0
+    list.ScrollBarImageColor3 = theme.accent
+    list.ScrollingEnabled = needsScroll
+    list.CanvasSize = UDim2.new(0, 0, 0, contentHeight)
+    list.ZIndex = 100
+    list.Parent = menu
+
+    local menuLayout = Instance.new("UIListLayout")
+    menuLayout.Padding = UDim.new(0, DROPDOWN_OPTION_PADDING)
+    menuLayout.Parent = list
+
+    for _, option in ipairs(options) do
+        local optionBtn = Instance.new("TextButton")
+        optionBtn.Size = UDim2.new(1, needsScroll and -14 or -10, 0, DROPDOWN_OPTION_HEIGHT)
+        optionBtn.Position = UDim2.new(0, 5, 0, 0)
+        optionBtn.BackgroundColor3 = theme.surface
+        optionBtn.BorderSizePixel = 0
+        optionBtn.Text = option
+        optionBtn.TextColor3 = theme.text
+        optionBtn.Font = Enum.Font.Code
+        optionBtn.TextSize = 12
+        optionBtn.ZIndex = 101
+        optionBtn.Parent = list
+
+        optionBtn.MouseButton1Click:Connect(function()
+            onSelect(option)
+        end)
+
+        createHoverEffect(optionBtn, theme.surface)
+    end
+
+    -- Keep the canvas and the clamped menu height in sync with what actually laid out
+    menuLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        local measured = menuLayout.AbsoluteContentSize.Y + 8
+        list.CanvasSize = UDim2.new(0, 0, 0, measured)
+        menu.Size = UDim2.new(1, 0, 0, math.min(measured, maxHeight))
+    end)
+
+    return menu
+end
+
 -- Dropdown (NOW WITH setText)
 function UILibrary:addDropdown(config)
     config = config or {}
@@ -1401,59 +1482,23 @@ function UILibrary:addDropdown(config)
     corner.CornerRadius = UDim.new(0, 4)
     corner.Parent = dropdown
     
-    -- Dropdown menu
-    local menu = Instance.new("Frame")
-    menu.Size = UDim2.new(1, 0, 0, 0)
-    menu.Position = UDim2.new(0, 0, 1, 6)
-    menu.BackgroundColor3 = self.theme.surface
-    menu.BorderColor3 = self.theme.accent2
-    menu.BorderSizePixel = 1
-    menu.Visible = false
-    menu.ZIndex = 100
-    menu.Parent = dropdown
-    
-    local menuLayout = Instance.new("UIListLayout")
-    menuLayout.Padding = UDim.new(0, 4)
-    menuLayout.Parent = menu
-    
-    -- Create option buttons
+    -- Dropdown menu (scrolls internally once the option list gets long)
     local currentOption = default
-    for i, option in ipairs(options) do
-        local optionBtn = Instance.new("TextButton")
-        optionBtn.Size = UDim2.new(1, -10, 0, 24)
-        optionBtn.Position = UDim2.new(0, 5, 0, 0)
-        optionBtn.BackgroundColor3 = self.theme.surface
-        optionBtn.BorderSizePixel = 0
-        optionBtn.Text = option
-        optionBtn.TextColor3 = self.theme.text
-        optionBtn.Font = Enum.Font.Code
-        optionBtn.TextSize = 12
-        optionBtn.ZIndex = 101
-        optionBtn.Parent = menu
-        
-        optionBtn.MouseButton1Click:Connect(function()
-            currentOption = option
-            dropdown.Text = option
-            menu.Visible = false
-            
-            -- Restore canvas size when option is selected
-            local tab = self.currentTab or self
-            if tab and tab.baseCanvasHeight then
-                tab.content.CanvasSize = UDim2.new(0, 0, 0, tab.baseCanvasHeight)
-            end
-            
-            callback(option)
-        end)
-        
-        createHoverEffect(optionBtn, self.theme.surface)
-    end
-    
-    -- Resize menu based on content
-    menuLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        local h = menuLayout.AbsoluteContentSize.Y + 8
-        menu.Size = UDim2.new(1, 0, 0, h)
+    local menu
+    menu = buildDropdownMenu(self.theme, dropdown, options, config, function(option)
+        currentOption = option
+        dropdown.Text = option
+        menu.Visible = false
+
+        -- Restore canvas size when option is selected
+        local tab = self.currentTab or self
+        if tab and tab.baseCanvasHeight then
+            tab.content.CanvasSize = UDim2.new(0, 0, 0, tab.baseCanvasHeight)
+        end
+
+        callback(option)
     end)
-    
+
     -- Smart canvas resizing: Only expand if dropdown would overflow
     dropdown.MouseButton1Click:Connect(function()
         menu.Visible = not menu.Visible
@@ -1918,7 +1963,8 @@ function UILibrary:CreateToggle(name, default, color, transparency, callback)
 end
 
 -- CreateDropdown('Set Hoverboard 🛹', {'option1', 'option2'}, nil, 0.25, function(Value) ... end)
-function UILibrary:CreateDropdown(name, options, default, transparency, callback)
+-- config (optional): { maxVisibleOptions = n } or { maxHeight = px } to cap the open menu height
+function UILibrary:CreateDropdown(name, options, default, transparency, callback, config)
     local row = Instance.new("Frame")
     row.Size = UDim2.new(1, 0, 0, 26)
     row.BackgroundTransparency = 1
@@ -1951,55 +1997,23 @@ function UILibrary:CreateDropdown(name, options, default, transparency, callback
     corner.CornerRadius = UDim.new(0, 4)
     corner.Parent = dropdown
     
-    local menu = Instance.new("Frame")
-    menu.Size = UDim2.new(1, 0, 0, 0)
-    menu.Position = UDim2.new(0, 0, 1, 6)
-    menu.BackgroundColor3 = self.theme.surface
-    menu.BorderColor3 = self.theme.accent2
-    menu.BorderSizePixel = 1
-    menu.Visible = false
-    menu.ZIndex = 100
-    menu.Parent = dropdown
-    
-    local menuLayout = Instance.new("UIListLayout")
-    menuLayout.Padding = UDim.new(0, 4)
-    menuLayout.Parent = menu
-    
-    local currentOption = default or options[1]
-    for _, option in ipairs(options or {}) do
-        local optionBtn = Instance.new("TextButton")
-        optionBtn.Size = UDim2.new(1, -10, 0, 24)
-        optionBtn.Position = UDim2.new(0, 5, 0, 0)
-        optionBtn.BackgroundColor3 = self.theme.surface
-        optionBtn.BorderSizePixel = 0
-        optionBtn.Text = option
-        optionBtn.TextColor3 = self.theme.text
-        optionBtn.Font = Enum.Font.Code
-        optionBtn.TextSize = 12
-        optionBtn.ZIndex = 101
-        optionBtn.Parent = menu
-        
-        optionBtn.MouseButton1Click:Connect(function()
-            currentOption = option
-            dropdown.Text = option
-            menu.Visible = false
-            
-            -- Restore canvas size when option is selected
-            local tab = self.currentTab or self
-            if tab and tab.baseCanvasHeight then
-                tab.content.CanvasSize = UDim2.new(0, 0, 0, tab.baseCanvasHeight)
-            end
-            
-            callback(option)
-        end)
-        
-        createHoverEffect(optionBtn, self.theme.surface)
-    end
-    
-    menuLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        menu.Size = UDim2.new(1, 0, 0, menuLayout.AbsoluteContentSize.Y + 8)
+    -- Dropdown menu (scrolls internally once the option list gets long)
+    local currentOption = default or (options and options[1])
+    local menu
+    menu = buildDropdownMenu(self.theme, dropdown, options, config, function(option)
+        currentOption = option
+        dropdown.Text = option
+        menu.Visible = false
+
+        -- Restore canvas size when option is selected
+        local tab = self.currentTab or self
+        if tab and tab.baseCanvasHeight then
+            tab.content.CanvasSize = UDim2.new(0, 0, 0, tab.baseCanvasHeight)
+        end
+
+        callback(option)
     end)
-    
+
     dropdown.MouseButton1Click:Connect(function()
         menu.Visible = not menu.Visible
         
@@ -2208,8 +2222,8 @@ function UILibrary:CreateSection(name)
         return toggle
     end
     
-    function section:CreateDropdown(dropdownName, dropdownOptions, dropdownDefault, dropdownTransparency, dropdownCallback)
-        local dropdown = section.parent:CreateDropdown(dropdownName, dropdownOptions, dropdownDefault, dropdownTransparency, dropdownCallback)
+    function section:CreateDropdown(dropdownName, dropdownOptions, dropdownDefault, dropdownTransparency, dropdownCallback, dropdownConfig)
+        local dropdown = section.parent:CreateDropdown(dropdownName, dropdownOptions, dropdownDefault, dropdownTransparency, dropdownCallback, dropdownConfig)
         dropdown.element.Parent = content
         table.insert(section.elements, dropdown)
         return dropdown
