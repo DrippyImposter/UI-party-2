@@ -46,9 +46,31 @@
     window:SetTitle(text), window:SetStatus(text), window:Show(),
     window:Hide(), window:ToggleVisible(), window:Destroy().
 
-    Not included yet (the old UiLibrary has these, this doesn't): Label,
-    InfoContainer, ButtonRow, NoteButton, Divider, config save/load. Ask
-    if you need any of those ported over too.
+    Also on any Container (tab column or section): CreateLabel(text),
+    CreateInfoContainer({text=,height=,textColor=,textSize=}) — read-only
+    status box, returns {setText=,setColor=} — and CreateButtonRow /
+    CreateMoveButtons / CreateTypeSwitcher({types=,default=,height=,callback=},
+    returns {setType=,getCurrentType=,setText=}) / CreateActionToggle
+    ({text=,callback=}, a stateless toggle-styled button that flashes on
+    then springs back off after firing once), all also reachable under
+    their old-library lowercase names (addButtonRow / addMoveButtons /
+    addInfoContainer / addTypeSwitcher / addActionToggle) for drop-in
+    compatibility.
+
+    Old-library method-name aliases on Toggle/Slider/Dropdown returns:
+    setState/getState, setValue/getValue, setOption/getOption — all mirror
+    set/get. Every stateful control also has setText, matching the old
+    library's "override the displayed text directly" escape hatch.
+
+    Config persistence, ported from the old UiLibrary: pass configFolder /
+    configGet / configSet to PremiumUI.new(...), then window:SaveConfig(name)
+    / :LoadConfig(name) / :DeleteConfig(name) / :GetConfigs(). Uses
+    writefile/readfile (or syn.*/fluxus.* equivalents) + JSON, exactly like
+    before — no executor support, these just return false.
+
+    Not included yet (the old UiLibrary has this, this doesn't): Divider —
+    sections' own borders are the replacement; there's rarely a reason to
+    want a bare line inside one now. Ask if you still want it.
 
     Dark grayscale theme, Inter typography, true rounded window corners,
     and a background grid of diamonds that press inward toward the mouse
@@ -60,10 +82,54 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local GuiService = game:GetService("GuiService")
+local HttpService = game:GetService("HttpService")
 
 local LocalPlayer = Players.LocalPlayer
 
 local PremiumUI = {}
+
+-- ============================================================
+-- Config save/load — writefile/readfile based, JSON-encoded. Ported from
+-- the old UiLibrary. Executor function names vary, so this probes the
+-- common aliases (default global, syn.*, fluxus.*) rather than assuming
+-- one; on an executor with none of these, every method below just
+-- returns false instead of erroring.
+-- ============================================================
+local function getFs()
+    local wf = writefile or (syn and syn.writefile) or (fluxus and fluxus.writefile)
+    local rf = readfile or (syn and syn.readfile) or (fluxus and fluxus.readfile)
+    local df = delfile or (syn and syn.delfile) or (fluxus and fluxus.delfile)
+    local isf = isfile or (syn and syn.isfile) or (fluxus and fluxus.isfile)
+    local lf = listfiles or (syn and syn.listfiles) or (fluxus and fluxus.listfiles)
+    local mf = makefolder or (syn and syn.makefolder) or (fluxus and fluxus.makefolder)
+    local isfld = isfolder or (syn and syn.isfolder) or (fluxus and fluxus.isfolder)
+    return wf, rf, df, isf, lf, mf, isfld
+end
+
+local function ensureFolder(path)
+    local _, _, _, _, _, mf, isfld = getFs()
+    if not mf then return false end
+    if isfld and isfld(path) then return true end
+    return (pcall(mf, path))
+end
+
+local function basename(path)
+    return tostring(path):match("[^/\\]+$") or tostring(path)
+end
+
+local function sanitizeName(name)
+    name = tostring(name or "")
+    name = name:gsub("^%s+", ""):gsub("%s+$", "")
+    name = name:gsub("[^%w%-%_ ]", "")
+    name = name:gsub("%s+", " ")
+    return name
+end
+
+local function getConfigPath(folder, name)
+    local clean = sanitizeName(name)
+    if clean == "" then clean = "default" end
+    return folder .. "/" .. clean .. ".json"
+end
 
 -- ============================================================
 -- Theme — pure grayscale, no hue anywhere. "Accent" is a near-white used
@@ -500,12 +566,95 @@ local function createToggle(body, name, default, callback)
         if callback then callback(state) end
     end)
 
-    return {
+    local api = {
         set = function(v)
             state = v
             render(true)
         end,
         get = function() return state end,
+        setText = function(newText) label.Text = newText end,
+    }
+    -- old UiLibrary compat aliases (setState/getState) — see file header
+    api.setState = api.set
+    api.getState = api.get
+    return api
+end
+
+-- ============================================================
+-- Action Toggle — looks like a toggle switch but holds no state: each
+-- click flashes the track on, fires the callback once, then springs the
+-- track back off after a beat. Old-library compat: {text=,callback=} in,
+-- callback() takes no args, returns {setText=,element=}.
+-- ============================================================
+local function createActionToggle(body, config)
+    config = config or {}
+    local callback = config.callback or function() end
+
+    local row = Instance.new("Frame")
+    row.BackgroundTransparency = 1
+    row.Size = UDim2.new(1, 0, 0, 26)
+    row.LayoutOrder = nextOrder()
+    row.Parent = body
+
+    local label = Instance.new("TextLabel")
+    label.BackgroundTransparency = 1
+    label.Size = UDim2.new(1, -54, 1, 0)
+    label.FontFace = FONT_MED
+    label.TextSize = 13
+    label.TextColor3 = Theme.TextPrimary
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Text = config.text or "Action"
+    label.Parent = row
+
+    local track = Instance.new("Frame")
+    track.AnchorPoint = Vector2.new(1, 0.5)
+    track.Position = UDim2.new(1, 0, 0.5, 0)
+    track.Size = UDim2.fromOffset(44, 22)
+    track.BackgroundColor3 = Theme.TrackOff
+    track.BorderSizePixel = 0
+    track.Parent = row
+
+    local trackCorner = Instance.new("UICorner")
+    trackCorner.CornerRadius = UDim.new(1, 0)
+    trackCorner.Parent = track
+
+    local knob = Instance.new("Frame")
+    knob.Size = UDim2.fromOffset(18, 18)
+    knob.Position = UDim2.new(0, 2, 0.5, -9)
+    knob.BackgroundColor3 = Color3.new(1, 1, 1)
+    knob.BorderSizePixel = 0
+    knob.Parent = track
+
+    local knobCorner = Instance.new("UICorner")
+    knobCorner.CornerRadius = UDim.new(1, 0)
+    knobCorner.Parent = knob
+
+    local hitArea = Instance.new("TextButton")
+    hitArea.BackgroundTransparency = 1
+    hitArea.Size = UDim2.new(1, 0, 1, 0)
+    hitArea.Text = ""
+    hitArea.Parent = track
+
+    local flashing = false
+    hitArea.MouseButton1Click:Connect(function()
+        if flashing then return end
+        flashing = true
+        TweenService:Create(knob, TweenInfo.new(0.15, Enum.EasingStyle.Quad), {Position = UDim2.new(1, -20, 0.5, -9)}):Play()
+        TweenService:Create(track, TweenInfo.new(0.15, Enum.EasingStyle.Quad), {BackgroundColor3 = Theme.ActiveTrack}):Play()
+
+        if callback then callback() end
+
+        task.spawn(function()
+            task.wait(1)
+            TweenService:Create(knob, TweenInfo.new(0.15, Enum.EasingStyle.Quad), {Position = UDim2.new(0, 2, 0.5, -9)}):Play()
+            TweenService:Create(track, TweenInfo.new(0.15, Enum.EasingStyle.Quad), {BackgroundColor3 = Theme.TrackOff}):Play()
+            flashing = false
+        end)
+    end)
+
+    return {
+        setText = function(newText) label.Text = newText end,
+        element = row,
     }
 end
 
@@ -536,11 +685,21 @@ local function createButton(body, buttonText, callback)
     btn.MouseEnter:Connect(function() btn.BackgroundColor3 = Theme.AccentHover end)
     btn.MouseLeave:Connect(function() btn.BackgroundColor3 = Theme.Accent end)
 
+    -- Returns an API object (not the raw instance) and passes that same
+    -- object into the callback as its first argument — matching the old
+    -- UiLibrary's addButton, whose callers rely on `btn.setText(...)`
+    -- inside their own click handler (e.g. a temporary "Saved!" flash).
+    local buttonAPI = {
+        setText = function(newText) btn.Text = newText end,
+        getText = function() return btn.Text end,
+        element = btn,
+    }
+
     btn.MouseButton1Click:Connect(function()
-        if callback then callback() end
+        if callback then callback(buttonAPI) end
     end)
 
-    return btn
+    return buttonAPI
 end
 
 -- ============================================================
@@ -580,11 +739,17 @@ local function createTextButton(body, buttonText, callback)
         btn.BackgroundTransparency = 1
     end)
 
+    local buttonAPI = {
+        setText = function(newText) btn.Text = newText end,
+        getText = function() return btn.Text end,
+        element = btn,
+    }
+
     btn.MouseButton1Click:Connect(function()
-        if callback then callback() end
+        if callback then callback(buttonAPI) end
     end)
 
-    return btn
+    return buttonAPI
 end
 
 -- ============================================================
@@ -641,6 +806,7 @@ local function createSlider(body, name, min, max, default, callback)
     knobCorner.Parent = knob
 
     local dragging = false
+    local currentValue = default
 
     local function apply(value, fire)
         value = math.clamp(value, min, max)
@@ -648,6 +814,7 @@ local function createSlider(body, name, min, max, default, callback)
         fill.Size = UDim2.new(rel, 0, 1, 0)
         knob.Position = UDim2.new(rel, 0, 0.5, 0)
         local rounded = math.floor(value + 0.5)
+        currentValue = rounded
         label.Text = name .. ": " .. tostring(rounded)
         if fire and callback then
             callback(rounded)
@@ -683,9 +850,15 @@ local function createSlider(body, name, min, max, default, callback)
 
     apply(default, false)
 
-    return {
+    local api = {
         set = function(v) apply(v, true) end,
+        get = function() return currentValue end,
+        setText = function(newText) label.Text = newText end,
     }
+    -- old UiLibrary compat aliases (setValue/getValue) — see file header
+    api.setValue = api.set
+    api.getValue = api.get
+    return api
 end
 
 -- ============================================================
@@ -816,12 +989,21 @@ local function createDropdown(body, name, options, default, callback)
     -- extend past the column's own bounds if needed (see openList/closeList).
     local column = row:FindFirstAncestorWhichIsA("ScrollingFrame")
 
-    local list = Instance.new("Frame")
+    -- ScrollingFrame (not a plain Frame): the popup's own open height is
+    -- capped at 5 rows below, but option lists can run much longer than
+    -- that (e.g. a 51-chunk picker) — those extra rows need to stay
+    -- reachable by scrolling *within the popup* rather than silently
+    -- clipped off with no way to get to them.
+    local list = Instance.new("ScrollingFrame")
     list.BackgroundColor3 = Theme.Surface
     list.BorderSizePixel = 0
     list.AnchorPoint = Vector2.new(0, 0)
     list.Position = UDim2.new(0, 0, 1, 4)
     list.Size = UDim2.new(1, 0, 0, 0)
+    list.CanvasSize = UDim2.new(0, 0, 0, 0)
+    list.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    list.ScrollBarThickness = 4
+    list.ScrollBarImageColor3 = Theme.TextDim
     list.Visible = false
     list.ZIndex = 50
     list.ClipsDescendants = true
@@ -949,12 +1131,299 @@ local function createDropdown(body, name, options, default, callback)
         end)
     end
 
-    return {
+    local api = {
         set = function(v)
             selected = v
             box.Text = "  " .. tostring(selected)
         end,
         get = function() return selected end,
+        -- targets the label above the box, matching the old UiLibrary's
+        -- dropdown setText (which overrides dropdownLabel, not the
+        -- selector button's own text)
+        setText = function(newText) label.Text = newText end,
+    }
+    -- old UiLibrary compat aliases (setOption/getOption) — see file header
+    api.setOption = api.set
+    api.getOption = api.get
+    return api
+end
+
+-- ============================================================
+-- Label — plain non-interactive text row, no box. Old-library compat:
+-- targets things like a small caption or a live "TARGET: ..." readout
+-- that only ever gets updated via setText, never clicked/dragged.
+-- ============================================================
+local function createLabel(body, text)
+    local row = Instance.new("Frame")
+    row.BackgroundTransparency = 1
+    row.Size = UDim2.new(1, 0, 0, 20)
+    row.LayoutOrder = nextOrder()
+    row.Parent = body
+
+    local label = Instance.new("TextLabel")
+    label.BackgroundTransparency = 1
+    label.Size = UDim2.new(1, 0, 1, 0)
+    label.FontFace = FONT_BOLD
+    label.TextSize = 12
+    label.TextColor3 = Theme.TextSecond
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Text = text or ""
+    label.Parent = row
+
+    return {
+        setText = function(newText) label.Text = newText end,
+    }
+end
+
+-- ============================================================
+-- Info Container — read-only status display box (multi-line capable).
+-- Old-library compat: {text=, height=, textColor=, textSize=} in, returns
+-- {setText=, setColor=}.
+-- ============================================================
+local function createInfoContainer(body, config)
+    config = config or {}
+
+    local row = Instance.new("Frame")
+    row.BackgroundTransparency = 1
+    row.Size = UDim2.new(1, 0, 0, config.height or 80)
+    row.LayoutOrder = nextOrder()
+    row.Parent = body
+
+    local box = Instance.new("TextLabel")
+    box.Size = UDim2.new(1, 0, 1, 0)
+    box.BackgroundColor3 = Theme.Base
+    box.FontFace = FONT_BODY
+    box.TextSize = config.textSize or 12
+    box.TextColor3 = config.textColor or Theme.TextSecond
+    box.TextXAlignment = Enum.TextXAlignment.Left
+    box.TextYAlignment = Enum.TextYAlignment.Top
+    box.TextWrapped = true
+    box.Text = config.text or ""
+    box.Parent = row
+
+    local boxPad = Instance.new("UIPadding")
+    boxPad.PaddingLeft = UDim.new(0, 10)
+    boxPad.PaddingRight = UDim.new(0, 10)
+    boxPad.PaddingTop = UDim.new(0, 8)
+    boxPad.PaddingBottom = UDim.new(0, 8)
+    boxPad.Parent = box
+
+    local boxCorner = Instance.new("UICorner")
+    boxCorner.CornerRadius = UDim.new(0, RADIUS_CONTROL)
+    boxCorner.Parent = box
+
+    local boxStroke = Instance.new("UIStroke")
+    boxStroke.Color = Theme.Border
+    boxStroke.Thickness = 1
+    boxStroke.Parent = box
+
+    return {
+        setText = function(newText) box.Text = newText end,
+        setColor = function(newColor) box.BackgroundColor3 = newColor end,
+    }
+end
+
+-- ============================================================
+-- Button Row — several buttons side by side in one row. Old-library
+-- compat: {height=, buttons={{text=, callback=}, ...}} in, returns an
+-- array of button API objects (same shape as CreateButton's return).
+-- ============================================================
+local function createButtonRow(body, config)
+    config = config or {}
+    local buttons = config.buttons or {}
+    local count = math.max(1, #buttons)
+    local GAP = 8
+
+    local row = Instance.new("Frame")
+    row.BackgroundTransparency = 1
+    row.Size = UDim2.new(1, 0, 0, config.height or 36)
+    row.LayoutOrder = nextOrder()
+    row.Parent = body
+
+    local layout = Instance.new("UIListLayout")
+    layout.FillDirection = Enum.FillDirection.Horizontal
+    layout.Padding = UDim.new(0, GAP)
+    layout.Parent = row
+
+    local created = {}
+    for i, btnConfig in ipairs(buttons) do
+        local btn = Instance.new("TextButton")
+        btn.LayoutOrder = i
+        btn.Size = UDim2.new(1 / count, -(GAP * (count - 1) / count), 1, 0)
+        btn.BackgroundColor3 = Theme.Accent
+        btn.AutoButtonColor = false
+        btn.FontFace = FONT_BOLD
+        btn.TextSize = 12
+        btn.TextColor3 = Theme.Base
+        btn.Text = btnConfig.text or "Button"
+        btn.Parent = row
+
+        local c = Instance.new("UICorner")
+        c.CornerRadius = UDim.new(0, RADIUS_CONTROL)
+        c.Parent = btn
+
+        btn.MouseEnter:Connect(function() btn.BackgroundColor3 = Theme.AccentHover end)
+        btn.MouseLeave:Connect(function() btn.BackgroundColor3 = Theme.Accent end)
+
+        local buttonAPI = {
+            setText = function(newText) btn.Text = newText end,
+            getText = function() return btn.Text end,
+            element = btn,
+        }
+
+        btn.MouseButton1Click:Connect(function()
+            if btnConfig.callback then btnConfig.callback(buttonAPI) end
+        end)
+
+        table.insert(created, buttonAPI)
+    end
+
+    return created
+end
+
+-- ============================================================
+-- Move Buttons — the M1/M2/M3/M4 battle-move-select grid. Old-library
+-- compat: {text=, default=, callback=} in, returns {setMove=, getMove=}.
+-- ============================================================
+local function createMoveButtons(body, config)
+    config = config or {}
+    local callback = config.callback
+    local selectedMove = config.default or 1
+    local GAP = 6
+
+    local row = Instance.new("Frame")
+    row.BackgroundTransparency = 1
+    row.Size = UDim2.new(1, 0, 0, 54)
+    row.LayoutOrder = nextOrder()
+    row.Parent = body
+
+    local label = Instance.new("TextLabel")
+    label.BackgroundTransparency = 1
+    label.Size = UDim2.new(1, 0, 0, 16)
+    label.FontFace = FONT_MED
+    label.TextSize = 13
+    label.TextColor3 = Theme.TextPrimary
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Text = config.text or "Select Move"
+    label.Parent = row
+
+    local buttonsRow = Instance.new("Frame")
+    buttonsRow.BackgroundTransparency = 1
+    buttonsRow.Position = UDim2.new(0, 0, 0, 22)
+    buttonsRow.Size = UDim2.new(1, 0, 0, 32)
+    buttonsRow.Parent = row
+
+    local layout = Instance.new("UIListLayout")
+    layout.FillDirection = Enum.FillDirection.Horizontal
+    layout.Padding = UDim.new(0, GAP)
+    layout.Parent = buttonsRow
+
+    local moveButtons = {}
+    for i = 1, 4 do
+        local btn = Instance.new("TextButton")
+        btn.LayoutOrder = i
+        btn.Size = UDim2.new(0.25, -(GAP * 3 / 4), 1, 0)
+        btn.AutoButtonColor = false
+        btn.FontFace = FONT_BOLD
+        btn.TextSize = 13
+        btn.Text = "M" .. i
+        btn.Parent = buttonsRow
+
+        local c = Instance.new("UICorner")
+        c.CornerRadius = UDim.new(0, RADIUS_CONTROL)
+        c.Parent = btn
+
+        local stroke = Instance.new("UIStroke")
+        stroke.Color = Theme.Border
+        stroke.Thickness = 1
+        stroke.Parent = btn
+
+        moveButtons[i] = btn
+    end
+
+    local function render()
+        for i, btn in ipairs(moveButtons) do
+            local active = (i == selectedMove)
+            btn.BackgroundColor3 = active and Theme.Accent or Theme.Base
+            btn.TextColor3 = active and Theme.Base or Theme.TextPrimary
+        end
+    end
+    render()
+
+    for i, btn in ipairs(moveButtons) do
+        btn.MouseButton1Click:Connect(function()
+            selectedMove = i
+            render()
+            if callback then callback(i) end
+        end)
+    end
+
+    return {
+        setMove = function(move)
+            selectedMove = move
+            render()
+        end,
+        getMove = function() return selectedMove end,
+    }
+end
+
+-- ============================================================
+-- Type Switcher — a single button that cycles through a fixed list of
+-- string options on click. Old-library compat: {types=, default=,
+-- height=, callback=} in, callback(type, index) on click, returns
+-- {setType=, getCurrentType=, setText=}.
+-- ============================================================
+local function createTypeSwitcher(body, config)
+    config = config or {}
+    local types = config.types or {"Option 1", "Option 2"}
+    local callback = config.callback
+    local currentIndex = config.default or 1
+
+    local row = Instance.new("Frame")
+    row.BackgroundTransparency = 1
+    row.Size = UDim2.new(1, 0, 0, config.height or 40)
+    row.LayoutOrder = nextOrder()
+    row.Parent = body
+
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 1, 0)
+    btn.BackgroundColor3 = Theme.Base
+    btn.AutoButtonColor = false
+    btn.FontFace = FONT_BOLD
+    btn.TextSize = 13
+    btn.TextColor3 = Theme.TextPrimary
+    btn.Text = types[currentIndex] or ""
+    btn.Parent = row
+
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, RADIUS_CONTROL)
+    c.Parent = btn
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Theme.Border
+    stroke.Thickness = 1
+    stroke.Parent = btn
+
+    btn.MouseEnter:Connect(function() btn.BackgroundColor3 = Theme.SurfaceHover end)
+    btn.MouseLeave:Connect(function() btn.BackgroundColor3 = Theme.Base end)
+
+    btn.MouseButton1Click:Connect(function()
+        currentIndex = (currentIndex % #types) + 1
+        btn.Text = types[currentIndex]
+        if callback then callback(types[currentIndex], currentIndex) end
+    end)
+
+    return {
+        setType = function(index)
+            currentIndex = index
+            btn.Text = types[currentIndex]
+        end,
+        getCurrentType = function()
+            return types[currentIndex], currentIndex
+        end,
+        setText = function(newText)
+            btn.Text = newText
+        end,
     }
 end
 
@@ -980,6 +1449,13 @@ function Container:CreateToggle(name, default, callback)
     return createToggle(self._body, name, default, callback)
 end
 
+function Container:CreateActionToggle(config)
+    return createActionToggle(self._body, config)
+end
+
+-- old-library name — same thing, kept for call-site compatibility
+Container.addActionToggle = Container.CreateActionToggle
+
 function Container:CreateButton(text, callback)
     return createButton(self._body, text, callback)
 end
@@ -999,6 +1475,38 @@ end
 function Container:CreateTextbox(name, placeholder, callback)
     return createTextbox(self._body, name, placeholder, callback)
 end
+
+function Container:CreateLabel(text)
+    return createLabel(self._body, text)
+end
+
+function Container:CreateInfoContainer(config)
+    return createInfoContainer(self._body, config)
+end
+
+-- old-library name — same thing, kept for call-site compatibility
+Container.addInfoContainer = Container.CreateInfoContainer
+
+function Container:CreateButtonRow(config)
+    return createButtonRow(self._body, config)
+end
+
+-- old-library name — same thing, kept for call-site compatibility
+Container.addButtonRow = Container.CreateButtonRow
+
+function Container:CreateMoveButtons(config)
+    return createMoveButtons(self._body, config)
+end
+
+-- old-library name — same thing, kept for call-site compatibility
+Container.addMoveButtons = Container.CreateMoveButtons
+
+function Container:CreateTypeSwitcher(config)
+    return createTypeSwitcher(self._body, config)
+end
+
+-- old-library name — same thing, kept for call-site compatibility
+Container.addTypeSwitcher = Container.CreateTypeSwitcher
 
 -- ============================================================
 -- Decorative background flourish — a full grid of small diamonds (plain
@@ -1129,6 +1637,10 @@ function PremiumUI.new(config)
     local WINDOW_W = config.width or 820
     local WINDOW_H = config.height or 560
     local windowName = config.name or "PremiumUIWindow"
+    local configFolder = sanitizeName(config.configFolder or "")
+    if configFolder == "" then configFolder = "PremiumUI_Configs" end
+    local configGet = config.configGet
+    local configSet = config.configSet
 
     local guiParent = getGuiParent()
 
@@ -1440,6 +1952,70 @@ function PremiumUI.new(config)
 
     function windowObj:ToggleVisible()
         screenGui.Enabled = not screenGui.Enabled
+    end
+
+    function windowObj:SaveConfig(name)
+        local wf = getFs()
+        if not wf then return false end
+        ensureFolder(configFolder)
+
+        local payload = {}
+        if type(configGet) == "function" then
+            local ok, res = pcall(configGet)
+            if ok and type(res) == "table" then payload = res end
+        end
+
+        local ok, data = pcall(function() return HttpService:JSONEncode(payload) end)
+        if not ok then return false end
+
+        return (pcall(wf, getConfigPath(configFolder, name), data))
+    end
+
+    function windowObj:LoadConfig(name)
+        local _, rf, _, isf = getFs()
+        if not rf then return false end
+
+        local path = getConfigPath(configFolder, name)
+        if isf and not isf(path) then return false end
+
+        local ok, raw = pcall(rf, path)
+        if not ok or not raw then return false end
+
+        local ok2, decoded = pcall(function() return HttpService:JSONDecode(raw) end)
+        if not ok2 or type(decoded) ~= "table" then return false end
+
+        if type(configSet) == "function" then
+            pcall(configSet, decoded)
+            return true
+        end
+        return false
+    end
+
+    function windowObj:DeleteConfig(name)
+        local _, _, df, isf = getFs()
+        if not df then return false end
+
+        local path = getConfigPath(configFolder, name)
+        if isf and not isf(path) then return false end
+
+        return (pcall(df, path))
+    end
+
+    function windowObj:GetConfigs()
+        local _, _, _, _, lf = getFs()
+        if not lf then return {} end
+        ensureFolder(configFolder)
+
+        local ok, files = pcall(lf, configFolder)
+        if not ok or type(files) ~= "table" then return {} end
+
+        local configs = {}
+        for _, p in ipairs(files) do
+            local nm = basename(p):gsub("%.json$", "")
+            if nm ~= "" then table.insert(configs, nm) end
+        end
+        table.sort(configs)
+        return configs
     end
 
     function windowObj:Destroy()
