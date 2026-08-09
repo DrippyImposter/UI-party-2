@@ -327,8 +327,8 @@ local function createColumn(parent, size, position)
     column.Position = position
     column.ScrollBarThickness = 0 -- scrolling (wheel/drag) still works, just no visible track/thumb
     column.CanvasSize = UDim2.new(0, 0, 0, 0)
-    -- explicit (not just relying on ScrollingFrame's default) since
-    -- dropdowns toggle this off/on while open — see adjustColumnClipping
+    -- open dropdown menus escape this by reparenting into the ScreenGui-level
+    -- overlay (see getOverlay), so clipping can stay on unconditionally
     column.ClipsDescendants = true
     column.Parent = parent
 
@@ -363,17 +363,39 @@ local function nextOrder()
     return layoutOrderCounter
 end
 
--- Tracks how many currently-open dropdowns live inside each scrolling
--- column, so its clipping only gets re-enabled once none are left open
--- (two dropdowns in the same column shouldn't fight over one boolean).
--- Keyed by the actual column instance, so this is safely shared across
--- multiple window instances without any cross-window interference.
-local columnOpenDropdownCounts = {}
-local function adjustColumnClipping(column, delta)
-    if not column then return end
-    local count = (columnOpenDropdownCounts[column] or 0) + delta
-    columnOpenDropdownCounts[column] = count
-    column.ClipsDescendants = count <= 0
+-- ============================================================
+-- Overlay — one full-screen, non-clipping layer per ScreenGui that open
+-- dropdown menus are reparented into.
+--
+-- A menu can never render correctly from inside the section/column tree:
+-- the column, and the window itself, both set ClipsDescendants, so a menu
+-- near either boundary is cut off no matter what its ZIndex is (clipping
+-- ignores ZIndex entirely). On top of that, ZIndexBehavior.Sibling means a
+-- menu's ZIndex only competes with its own siblings, so it can never paint
+-- above a *different* section. Reparenting the menu to a sibling of
+-- `window` with a high ZIndex escapes both constraints at once.
+-- ============================================================
+local OVERLAY_NAME = "PremiumUIOverlay"
+local function getOverlay(descendant)
+    local screenGui = descendant:FindFirstAncestorWhichIsA("ScreenGui")
+    if not screenGui then return nil end
+
+    local overlay = screenGui:FindFirstChild(OVERLAY_NAME)
+    if not overlay then
+        overlay = Instance.new("Frame")
+        overlay.Name = OVERLAY_NAME
+        overlay.BackgroundTransparency = 1
+        overlay.BorderSizePixel = 0
+        overlay.Position = UDim2.fromOffset(0, 0)
+        overlay.Size = UDim2.fromScale(1, 1)
+        overlay.ClipsDescendants = false
+        -- Active stays false so this transparent full-screen layer never
+        -- swallows clicks meant for the window underneath it
+        overlay.Active = false
+        overlay.ZIndex = 1000 -- above `window`, the only sibling that matters
+        overlay.Parent = screenGui
+    end
+    return overlay
 end
 
 -- ============================================================
@@ -982,32 +1004,34 @@ local function createDropdown(body, name, options, default, callback)
     chevron.Rotation = 0
     chevron.Parent = box
 
-    -- Parented under `row` itself (not screenGui) and positioned purely
-    -- relative to it — the same mechanism every other element in this UI
-    -- already renders correctly with. `column` (the scrolling parent) has
-    -- its clipping temporarily disabled while open so the list can still
-    -- extend past the column's own bounds if needed (see openList/closeList).
     local column = row:FindFirstAncestorWhichIsA("ScrollingFrame")
+    local overlay = getOverlay(row)
 
-    -- ScrollingFrame (not a plain Frame): the popup's own open height is
-    -- capped at 5 rows below, but option lists can run much longer than
-    -- that (e.g. a 51-chunk picker) — those extra rows need to stay
-    -- reachable by scrolling *within the popup* rather than silently
-    -- clipped off with no way to get to them.
+    -- ScrollingFrame (not a plain Frame): the menu's on-screen height gets
+    -- capped to MAX_VISIBLE rows / whatever space is actually free, but option
+    -- lists can run far longer than that (e.g. a 51-chunk picker) — the
+    -- overflow has to stay reachable by scrolling *inside* the menu rather
+    -- than being silently cut off with no way to get to it.
+    --
+    -- Parented into the ScreenGui-level overlay, not into `row`, and given its
+    -- screen position from box.AbsolutePosition each frame while open (see
+    -- reposition). That detachment is what lets it paint over other sections
+    -- and past the window's own edge.
     local list = Instance.new("ScrollingFrame")
+    list.Name = "DropdownMenu"
     list.BackgroundColor3 = Theme.Surface
     list.BorderSizePixel = 0
     list.AnchorPoint = Vector2.new(0, 0)
-    list.Position = UDim2.new(0, 0, 1, 4)
-    list.Size = UDim2.new(1, 0, 0, 0)
+    list.Position = UDim2.fromOffset(0, 0)
+    list.Size = UDim2.fromOffset(0, 0)
     list.CanvasSize = UDim2.new(0, 0, 0, 0)
     list.AutomaticCanvasSize = Enum.AutomaticSize.Y
     list.ScrollBarThickness = 4
     list.ScrollBarImageColor3 = Theme.TextDim
     list.Visible = false
-    list.ZIndex = 50
+    list.ZIndex = 1001
     list.ClipsDescendants = true
-    list.Parent = row
+    list.Parent = overlay or row -- `or row` only as a degraded fallback
 
     local listCorner = Instance.new("UICorner")
     listCorner.CornerRadius = UDim.new(0, RADIUS_CONTROL)
@@ -1025,15 +1049,87 @@ local function createDropdown(body, name, options, default, callback)
     local selected = default
     box.Text = "  " .. tostring(selected)
 
-    local closeConn
+    local closeConn, followConn
     local isOpen = false
+    local openUpward = false
+    local menuWidth, menuHeight = 0, 0
     local OPEN_TWEEN = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
     local CLOSE_TWEEN = TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 
-    -- Animated close: tween the height back down to 0 (revealing less and
-    -- less of the clipped list, i.e. it visually retracts upward into the
-    -- box) and only flip Visible off + restore the column's clipping once
-    -- that tween actually finishes.
+    local ROW_H = 28
+    local LIST_PAD = 8
+    local MENU_GAP = 4
+    local MAX_VISIBLE = 5
+
+    -- Decides how tall the menu may be and which way it opens. Measured against
+    -- the overlay (i.e. the whole screen) rather than the window, because the
+    -- menu is explicitly allowed to extend past the window's edge. If it won't
+    -- fit below the box it flips above; if it fits neither way it takes the
+    -- roomier side, and the options that don't fit stay reachable by scrolling
+    -- inside the menu.
+    local function measure()
+        local wanted = math.min(#options, MAX_VISIBLE) * ROW_H + LIST_PAD
+        local oPos, oSize = overlay.AbsolutePosition, overlay.AbsoluteSize
+        local bPos, bSize = box.AbsolutePosition, box.AbsoluteSize
+
+        menuWidth = bSize.X
+
+        local roomBelow = (oPos.Y + oSize.Y) - (bPos.Y + bSize.Y) - MENU_GAP
+        local roomAbove = (bPos.Y - oPos.Y) - MENU_GAP
+        local floor = ROW_H + LIST_PAD -- never collapse below one usable row
+
+        if wanted <= roomBelow then
+            openUpward, menuHeight = false, wanted
+        elseif roomAbove > roomBelow then
+            openUpward, menuHeight = true, math.max(math.min(wanted, roomAbove), floor)
+        else
+            openUpward, menuHeight = false, math.max(math.min(wanted, roomBelow), floor)
+        end
+    end
+
+    -- Anchored bottom-left when opening upward, so growing the height expands
+    -- the menu away from the box instead of down over it.
+    local function reposition()
+        local oPos = overlay.AbsolutePosition
+        local bPos, bSize = box.AbsolutePosition, box.AbsoluteSize
+        local x = bPos.X - oPos.X
+
+        if openUpward then
+            list.AnchorPoint = Vector2.new(0, 1)
+            list.Position = UDim2.fromOffset(x, (bPos.Y - oPos.Y) - MENU_GAP)
+        else
+            list.AnchorPoint = Vector2.new(0, 0)
+            list.Position = UDim2.fromOffset(x, (bPos.Y + bSize.Y - oPos.Y) + MENU_GAP)
+        end
+    end
+
+    -- Roblox has no "effectively visible" query — GuiObject.Visible is local, so
+    -- a visible box inside a hidden tab body still reads as Visible. Walking the
+    -- chain is what catches a tab switch, a minimise, or window:Hide().
+    local function ancestorsVisible(gui)
+        local node = gui
+        while node and node:IsA("GuiObject") do
+            if not node.Visible then return false end
+            node = node.Parent
+        end
+        return true
+    end
+
+    -- The menu no longer rides along with its box automatically, so anything
+    -- that takes the box away — scrolling it out of its column, switching tabs,
+    -- hiding the window — would otherwise strand the menu floating on screen.
+    local function boxOnScreen()
+        if not box:IsDescendantOf(game) then return false end
+        if not ancestorsVisible(box) then return false end
+        if not column then return true end
+        local cPos, cSize = column.AbsolutePosition, column.AbsoluteSize
+        local bPos, bSize = box.AbsolutePosition, box.AbsoluteSize
+        return (bPos.Y + bSize.Y) > cPos.Y and bPos.Y < (cPos.Y + cSize.Y)
+    end
+
+    -- Animated close: tween the height back to 0 (the menu visually retracts
+    -- into the box, since `list` clips its own contents) and only flip Visible
+    -- off once that tween actually finishes.
     local function closeList()
         if not isOpen then return end
         isOpen = false
@@ -1042,15 +1138,17 @@ local function createDropdown(body, name, options, default, callback)
             closeConn:Disconnect()
             closeConn = nil
         end
+        if followConn then
+            followConn:Disconnect()
+            followConn = nil
+        end
 
         TweenService:Create(chevron, CLOSE_TWEEN, {Rotation = 0}):Play()
 
-        local closeTween = TweenService:Create(list, CLOSE_TWEEN, {Size = UDim2.new(1, 0, 0, 0)})
+        local closeTween = TweenService:Create(list, CLOSE_TWEEN, {Size = UDim2.fromOffset(menuWidth, 0)})
         closeTween.Completed:Connect(function()
             if not isOpen then
                 list.Visible = false
-                row.ZIndex = 1
-                adjustColumnClipping(column, -1)
             end
         end)
         closeTween:Play()
@@ -1061,30 +1159,29 @@ local function createDropdown(body, name, options, default, callback)
         return x >= p.X and x <= p.X + s.X and y >= p.Y and y <= p.Y + s.Y
     end
 
-    -- Animated open: start at zero height right under the row (label +
-    -- box, not just the box, so it can never land level with the button
-    -- itself), Visible immediately, then tween the height open — since
-    -- `list` already has ClipsDescendants on, growing the height is
-    -- exactly a "drops down" reveal of the options, one row at a time
-    -- from the top. Position/width are pure relative UDim2 (set once at
-    -- creation), so only Size.Y ever needs to change here.
     local function openList()
+        if not overlay then return end
         isOpen = true
 
-        local targetHeight = math.min(#options, 5) * 28 + 8
-        adjustColumnClipping(column, 1)
+        measure()
+        reposition()
 
-        -- boosts the whole row (not just `list`) above its sibling rows —
-        -- Sibling ZIndex mode only compares elements under the same
-        -- immediate parent, so `list`'s own high ZIndex alone would only
-        -- beat `label`/`box`, not a later row in the same section
-        row.ZIndex = 50
-
-        list.Size = UDim2.new(1, 0, 0, 0)
+        list.Size = UDim2.fromOffset(menuWidth, 0)
         list.Visible = true
 
-        TweenService:Create(list, OPEN_TWEEN, {Size = UDim2.new(1, 0, 0, targetHeight)}):Play()
+        TweenService:Create(list, OPEN_TWEEN, {Size = UDim2.fromOffset(menuWidth, menuHeight)}):Play()
         TweenService:Create(chevron, OPEN_TWEEN, {Rotation = 180}):Play()
+
+        -- Keeps the detached menu glued to its box while the column scrolls or
+        -- the window gets dragged, and drops it once the box leaves view.
+        followConn = RunService.Heartbeat:Connect(function()
+            if not isOpen then return end
+            if not boxOnScreen() then
+                closeList()
+                return
+            end
+            reposition()
+        end)
 
         closeConn = UserInputService.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
