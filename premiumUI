@@ -80,7 +80,7 @@
     sections' own borders are the replacement; there's rarely a reason to
     want a bare line inside one now. Ask if you still want it.
 
-    Dark grayscale theme, Inter typography, true rounded window corners,
+    Dark grayscale theme, Gotham typography, true rounded window corners,
     and a background grid of diamonds that press inward toward the mouse
     on a damped spring and bounce back out on release.
 ]]
@@ -159,12 +159,23 @@ local Theme = {
     TrackOff     = Color3.fromRGB(55, 55, 55),
 }
 
--- Inter throughout; Medium/SemiBold are the emphasis tiers (no heavier Bold used).
--- These are Font objects (not legacy Enum.Font), so they're assigned via
--- .FontFace, not .Font, everywhere below.
-local FONT_BODY = Font.fromName("Inter", Enum.FontWeight.Regular)
-local FONT_MED  = Font.fromName("Inter", Enum.FontWeight.Medium)
-local FONT_BOLD = Font.fromName("Inter", Enum.FontWeight.SemiBold)
+-- Three weight tiers: body, medium, bold. These are Font objects (not legacy
+-- Enum.Font), so they're assigned via .FontFace, not .Font, everywhere below.
+--
+-- These were Font.fromName("Inter", ...), which resolves to
+-- rbxasset://fonts/families/Inter.json — a family plenty of clients don't ship.
+-- When it's missing the engine logs
+--     Font family rbxasset://fonts/families/Inter.json failed to load: Temp read failed
+-- and silently falls back to a default face, so the whole UI renders in the
+-- wrong font. Font.fromEnum values are guaranteed present by the engine and
+-- cannot fail that way; Gotham is Roblox's long-standing UI face and the
+-- closest guaranteed match to Inter's look.
+--
+-- To go back to Inter on a client known to have it, swap these three for
+-- Font.fromName("Inter", Enum.FontWeight.Regular / .Medium / .SemiBold).
+local FONT_BODY = Font.fromEnum(Enum.Font.Gotham)
+local FONT_MED  = Font.fromEnum(Enum.Font.GothamMedium)
+local FONT_BOLD = Font.fromEnum(Enum.Font.GothamBold)
 
 local RADIUS_WINDOW  = 12
 local RADIUS_CARD    = 10
@@ -268,7 +279,7 @@ end
 -- Pokéball icon — the one Pokémon Brick Bronze hint, kept fully grayscale
 -- (no red) so it doesn't break the monochrome palette. Built from plain
 -- circles/rectangles: no image assets, no font glyphs that might not exist
--- in a given Inter build.
+-- in whichever font family actually resolves at runtime.
 -- ============================================================
 local function createPokeball(size)
     local ball = Instance.new("Frame")
@@ -1009,7 +1020,7 @@ local function createDropdown(body, name, options, default, callback)
     boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     boxStroke.Parent = box
 
-    -- plain ASCII "v" — the "▾" (U+25BE) symbol isn't in Inter's rendered
+    -- plain ASCII "v" — the "▾" (U+25BE) symbol isn't reliably in Roblox's rendered
     -- glyph set on Roblox either (same tofu-box issue as the old "✕" close
     -- icon), so a literal letter is used instead of a Geometric Shapes glyph.
     -- Rotating it 180° on open reads as "^" (pointing up) well enough.
@@ -1903,7 +1914,7 @@ function PremiumUI.new(config)
     end
 
     local minimizeBtn = createWindowControlButton("–")
-    -- plain ASCII "X" — the "✕" (U+2715) symbol isn't in Inter's rendered
+    -- plain ASCII "X" — the "✕" (U+2715) symbol isn't reliably in Roblox's rendered
     -- glyph set on Roblox and shows as a tofu box; a literal letter always renders.
     local closeBtn = createWindowControlButton("X", Color3.fromRGB(210, 70, 70))
 
