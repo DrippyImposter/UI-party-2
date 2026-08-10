@@ -1841,6 +1841,10 @@ function PremiumUI.new(config)
 
     local titleIcon = createPokeball(18)
     titleIcon.Position = UDim2.new(0, 16, 0.5, -9)
+    -- With the entrance animation on, the splash logo claims this slot when it
+    -- lands, so the pokeball is never shown at all — leaving it visible just
+    -- means the incoming logo visibly overlaps it for the whole flight.
+    titleIcon.Visible = not splashEnabled
     titleIcon.Parent = titleBar
 
     local titleText = Instance.new("TextLabel")
@@ -2327,18 +2331,24 @@ function PremiumUI.new(config)
             -- AbsolutePosition, otherwise the logo aims at a stale slot
             task.wait(0.5)
 
-            local slot = titleIcon.AbsolutePosition
+            -- Target derived from the title bar, not from titleIcon — that is
+            -- hidden while the splash runs, and this keeps the landing spot
+            -- correct regardless of the placeholder's state.
+            local bar = titleBar.AbsolutePosition
             local root = splashRoot.AbsolutePosition
             local FLY = TweenInfo.new(0.85, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut)
             local fly = TweenService:Create(logo, FLY, {
-                Position = UDim2.fromOffset(slot.X - root.X + ICON / 2, slot.Y - root.Y + ICON / 2),
+                Position = UDim2.fromOffset(
+                    bar.X - root.X + 16 + ICON / 2,
+                    bar.Y - root.Y + titleBar.AbsoluteSize.Y / 2
+                ),
                 Size = UDim2.fromOffset(ICON, ICON),
             })
 
             fly.Completed:Connect(function()
                 -- hand the logo to the title bar so it now moves with the window,
-                -- and retire the placeholder pokeball it just replaced
-                titleIcon.Visible = false
+                -- and drop the placeholder pokeball entirely — the logo is the icon
+                titleIcon:Destroy()
                 logo.AnchorPoint = Vector2.new(0, 0)
                 logo.Position = UDim2.new(0, 16, 0.5, -ICON / 2)
                 logo.Size = UDim2.fromOffset(ICON, ICON)
