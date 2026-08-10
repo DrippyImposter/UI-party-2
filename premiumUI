@@ -1785,6 +1785,10 @@ function PremiumUI.new(config)
     local splashCfg = config.splash
     if splashCfg == nil then splashCfg = {} end
     local splashEnabled = splashCfg ~= false
+    -- Set for the whole entrance animation. The show/hide hotkey is ignored
+    -- while it's true: that hotkey toggles screenGui.Enabled, which would take
+    -- the splash down with it and leave the sequence running invisibly.
+    local entranceActive = splashEnabled
     local splashTable = type(splashCfg) == "table" and splashCfg or {}
     -- Note: this is the *Image* (Texture) asset id. The Decal id that wraps it
     -- (96884987787159) renders blank through rbxassetid:// — see the loader below.
@@ -2087,6 +2091,8 @@ function PremiumUI.new(config)
             -- typing "Pikachu" hides the window mid-word.
             if gameProcessed then return end
             if UserInputService:GetFocusedTextBox() then return end
+            -- entrance animation owns the screen until it lands
+            if entranceActive then return end
 
             if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == config.toggleKey then
                 screenGui.Enabled = not screenGui.Enabled
@@ -2367,6 +2373,9 @@ function PremiumUI.new(config)
                 logo.ZIndex = 2
                 logo.Parent = titleBar
                 splashRoot:Destroy()
+
+                -- entrance is over: hand the hotkey back to the user
+                entranceActive = false
             end)
             fly:Play()
         end)
