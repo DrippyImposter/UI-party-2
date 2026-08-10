@@ -1774,7 +1774,9 @@ function PremiumUI.new(config)
     if splashCfg == nil then splashCfg = {} end
     local splashEnabled = splashCfg ~= false
     local splashTable = type(splashCfg) == "table" and splashCfg or {}
-    local SPLASH_IMAGE = splashTable.image or "rbxassetid://96884987787159"
+    -- Note: this is the *Image* (Texture) asset id. The Decal id that wraps it
+    -- (96884987787159) renders blank through rbxassetid:// — see the loader below.
+    local SPLASH_IMAGE = splashTable.image or "rbxassetid://82209945132862"
     local SPLASH_TEXT = splashTable.text or "The Klone Hub Experience"
     local SPLASH_TIME = splashTable.duration or 5
 
@@ -2214,6 +2216,53 @@ function PremiumUI.new(config)
         logo.ImageTransparency = 1
         logo.ZIndex = 2001
         logo.Parent = splashRoot
+
+        -- Shown only if the image never loads, so the splash degrades to a mark
+        -- instead of an invisible gap. Parented to `logo` so it inherits every
+        -- position/size tween automatically, including the flight to the corner.
+        local logoFallback = Instance.new("TextLabel")
+        logoFallback.Name = "LogoFallback"
+        logoFallback.BackgroundTransparency = 1
+        logoFallback.Size = UDim2.fromScale(1, 1)
+        logoFallback.FontFace = FONT_BOLD
+        logoFallback.TextScaled = true
+        logoFallback.TextColor3 = Theme.TextPrimary
+        logoFallback.Text = "K"
+        logoFallback.Visible = false
+        logoFallback.ZIndex = 2002
+        logoFallback.Parent = logo
+
+        -- Image loading is async and fails *silently* — a wrong-type or moderated
+        -- asset just renders nothing, forever, with no error. PreloadAsync is what
+        -- lets us tell "still loading" apart from "will never load".
+        --
+        -- The usual culprit: rbxassetid:// renders only *Image* assets, but an
+        -- upload's public/library id is often the *Decal* that wraps the image —
+        -- a different asset id, which renders blank. Rather than make the caller
+        -- hunt down the inner Texture id in Studio, fall back to the thumbnail
+        -- endpoint, which resolves ANY asset id (Decal or Image) to a rendered
+        -- picture. 420x420 is one of its supported sizes and is plenty for a
+        -- 190px splash.
+        task.spawn(function()
+            local contentProvider = game:GetService("ContentProvider")
+
+            local function tryLoad(image)
+                logo.Image = image
+                pcall(function() contentProvider:PreloadAsync({logo}) end)
+                return logo.IsLoaded
+            end
+
+            if tryLoad(SPLASH_IMAGE) then return end
+
+            local id = tostring(SPLASH_IMAGE):match("(%d+)")
+            if id and tryLoad(("rbxthumb://type=Asset&id=%s&w=420&h=420"):format(id)) then
+                return
+            end
+
+            logoFallback.Visible = true
+            warn(("[PremiumUI] splash image would not load as either rbxassetid:// or " ..
+                "rbxthumb:// (%s). Check the id is public and approved."):format(tostring(SPLASH_IMAGE)))
+        end)
 
         local tagline = Instance.new("TextLabel")
         tagline.Name = "Tagline"
