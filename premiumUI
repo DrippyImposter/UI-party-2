@@ -751,6 +751,9 @@ local function createTextButton(body, buttonText, callback)
     local stroke = Instance.new("UIStroke")
     stroke.Color = Theme.Border
     stroke.Thickness = 1
+    -- Border mode, same reason as elsewhere: Contextual would outline the
+    -- button's label glyphs instead of drawing its edge.
+    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     stroke.Parent = btn
 
     btn.MouseEnter:Connect(function()
@@ -929,6 +932,10 @@ local function createTextbox(body, name, placeholder, callback)
     local boxStroke = Instance.new("UIStroke")
     boxStroke.Color = Theme.Border
     boxStroke.Thickness = 1
+    -- Border, NOT the default Contextual: on a TextBox/TextButton/TextLabel,
+    -- Contextual strokes the rendered glyphs rather than the object's edge, so
+    -- the text itself gets a heavy outline (very obvious while typing).
+    boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     boxStroke.Parent = box
 
     box.Focused:Connect(function()
@@ -987,6 +994,10 @@ local function createDropdown(body, name, options, default, callback)
     local boxStroke = Instance.new("UIStroke")
     boxStroke.Color = Theme.Border
     boxStroke.Thickness = 1
+    -- Border, NOT the default Contextual: on a TextBox/TextButton/TextLabel,
+    -- Contextual strokes the rendered glyphs rather than the object's edge, so
+    -- the text itself gets a heavy outline (very obvious while typing).
+    boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     boxStroke.Parent = box
 
     -- plain ASCII "v" — the "▾" (U+25BE) symbol isn't in Inter's rendered
@@ -1312,6 +1323,10 @@ local function createInfoContainer(body, config)
     local boxStroke = Instance.new("UIStroke")
     boxStroke.Color = Theme.Border
     boxStroke.Thickness = 1
+    -- Border, NOT the default Contextual: on a TextBox/TextButton/TextLabel,
+    -- Contextual strokes the rendered glyphs rather than the object's edge, so
+    -- the text itself gets a heavy outline (very obvious while typing).
+    boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     boxStroke.Parent = box
 
     return {
@@ -1433,6 +1448,8 @@ local function createMoveButtons(body, config)
         local stroke = Instance.new("UIStroke")
         stroke.Color = Theme.Border
         stroke.Thickness = 1
+        -- Border mode: otherwise the M1-M4 labels render with outlined glyphs
+        stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
         stroke.Parent = btn
 
         moveButtons[i] = btn
@@ -1499,6 +1516,9 @@ local function createTypeSwitcher(body, config)
     local stroke = Instance.new("UIStroke")
     stroke.Color = Theme.Border
     stroke.Thickness = 1
+    -- Border mode, same reason as elsewhere: Contextual would outline the
+    -- button's label glyphs instead of drawing its edge.
+    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     stroke.Parent = btn
 
     btn.MouseEnter:Connect(function() btn.BackgroundColor3 = Theme.SurfaceHover end)
