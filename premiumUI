@@ -241,15 +241,63 @@ end
 -- ============================================================
 -- Dragging
 -- ============================================================
+-- How quickly the window catches up to the cursor. Higher is snappier, lower
+-- is floatier; ~18 keeps it clearly weighted without feeling laggy.
+local DRAG_RESPONSE = 18
+
 local function makeDraggable(handle, target)
     local dragging = false
     local dragInput, dragStart, startPos
+    local goal = nil
+    local followConn = nil
+
+    local function stopFollowing()
+        if followConn then
+            followConn:Disconnect()
+            followConn = nil
+        end
+    end
+
+    -- The window eases toward the cursor instead of being pinned rigidly to it,
+    -- which is what reads as weight/smoothness.
+    --
+    -- The exponential form makes this frame-rate independent: a flat
+    -- `Lerp(goal, 0.2)` every frame settles twice as fast at 120fps as at 60,
+    -- whereas `1 - exp(-k*dt)` gives the same physical settle time at any rate.
+    --
+    -- Only connected while dragging (and briefly after, to settle), so it can
+    -- never fight the entrance and show/hide tweens, which drive Position too.
+    local function startFollowing()
+        if followConn then return end
+        followConn = RunService.Heartbeat:Connect(function(dt)
+            if not goal then
+                stopFollowing()
+                return
+            end
+
+            target.Position = target.Position:Lerp(goal, 1 - math.exp(-DRAG_RESPONSE * dt))
+
+            if not dragging then
+                -- close enough: snap, drop the goal, and hand Position back to
+                -- whatever else may want to animate it
+                local p = target.Position
+                if math.abs(p.X.Offset - goal.X.Offset) < 0.5
+                    and math.abs(p.Y.Offset - goal.Y.Offset) < 0.5 then
+                    target.Position = goal
+                    goal = nil
+                    stopFollowing()
+                end
+            end
+        end)
+    end
 
     handle.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
             dragStart = input.Position
             startPos = target.Position
+            goal = target.Position
+            startFollowing()
 
             local conn
             conn = input.Changed:Connect(function()
@@ -269,8 +317,9 @@ local function makeDraggable(handle, target)
 
     UserInputService.InputChanged:Connect(function(input)
         if dragging and input == dragInput then
+            -- only ever move the goal; the Heartbeat above does the moving
             local delta = input.Position - dragStart
-            target.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+            goal = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
         end
     end)
 end
@@ -2080,6 +2129,60 @@ function PremiumUI.new(config)
         TweenService:Create(window, TweenInfo.new(0.18, Enum.EasingStyle.Quad), {Size = UDim2.fromOffset(WINDOW_W, targetH)}):Play()
     end)
 
+    -- ---- Show / hide animation ----
+    --
+    -- Scales the window about its OWN centre, not the screen's: it may have been
+    -- dragged anywhere, and tweening Size alone would make it crawl toward its
+    -- top-left corner. Size and Position are captured at hide time rather than
+    -- read from WINDOW_W/H so this stays correct while minimized too.
+    local TOGGLE_IN = TweenInfo.new(0.26, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+    local TOGGLE_OUT = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+    local TOGGLE_SCALE = 0.88
+
+    local shown = true
+    local toggleBusy = false
+    local restSize, restPos = window.Size, window.Position
+
+    local function shrunk(size, pos)
+        local w, h = size.X.Offset, size.Y.Offset
+        local sw, sh = w * TOGGLE_SCALE, h * TOGGLE_SCALE
+        return UDim2.new(size.X.Scale, sw, size.Y.Scale, sh),
+            UDim2.new(pos.X.Scale, pos.X.Offset + (w - sw) / 2,
+                      pos.Y.Scale, pos.Y.Offset + (h - sh) / 2)
+    end
+
+    local function setShown(target)
+        if toggleBusy or target == shown then return end
+        shown = target
+        toggleBusy = true
+
+        if target then
+            screenGui.Enabled = true
+            local size, pos = shrunk(restSize, restPos)
+            window.Size, window.Position = size, pos
+            window.Visible = true
+
+            local tween = TweenService:Create(window, TOGGLE_IN, {Size = restSize, Position = restPos})
+            tween.Completed:Connect(function() toggleBusy = false end)
+            tween:Play()
+        else
+            -- remember where/what size it was, so showing restores it exactly
+            restSize, restPos = window.Size, window.Position
+            local size, pos = shrunk(restSize, restPos)
+
+            local tween = TweenService:Create(window, TOGGLE_OUT, {Size = size, Position = pos})
+            tween.Completed:Connect(function()
+                window.Visible = false
+                screenGui.Enabled = false
+                -- put the real geometry back while hidden so the next show and
+                -- any dragging start from clean values
+                window.Size, window.Position = restSize, restPos
+                toggleBusy = false
+            end)
+            tween:Play()
+        end
+    end
+
     local toggleKeyConnection
     if config.toggleKey then
         toggleKeyConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
@@ -2095,7 +2198,7 @@ function PremiumUI.new(config)
             if entranceActive then return end
 
             if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == config.toggleKey then
-                screenGui.Enabled = not screenGui.Enabled
+                setShown(not shown)
             end
         end)
     end
@@ -2114,16 +2217,17 @@ function PremiumUI.new(config)
         statusText.Text = text
     end
 
+    -- all three animate, so scripted show/hide matches the hotkey exactly
     function windowObj:Show()
-        screenGui.Enabled = true
+        setShown(true)
     end
 
     function windowObj:Hide()
-        screenGui.Enabled = false
+        setShown(false)
     end
 
     function windowObj:ToggleVisible()
-        screenGui.Enabled = not screenGui.Enabled
+        setShown(not shown)
     end
 
     function windowObj:SaveConfig(name)
