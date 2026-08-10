@@ -508,9 +508,10 @@ local function createSection(parent, title, description)
     titleGroupLayout.Padding = UDim.new(0, 5)
     titleGroupLayout.Parent = titleGroup
 
-    local titleIcon = createPokeball(11)
-    titleIcon.LayoutOrder = 1
-    titleIcon.Parent = titleGroup
+    -- No pokeball here: every section is a bordered box whose legend sits in its
+    -- top-left corner, so an icon per section put one in the corner of all ~15
+    -- boxes. titleGroup is a horizontal UIListLayout with AutomaticSize.X, so
+    -- dropping it just leaves the label and the group shrinks to fit.
 
     local titleLabel = Instance.new("TextLabel")
     titleLabel.BackgroundTransparency = 1
