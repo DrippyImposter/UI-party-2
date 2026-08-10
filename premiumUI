@@ -8,7 +8,15 @@
         local window = PremiumUI.new({
             title = "Pokemon Brick Bronze",
             toggleKey = Enum.KeyCode.H, -- optional show/hide hotkey
+            -- splash = false,          -- skip the entrance animation, or:
+            -- splash = { image = "rbxassetid://...", text = "...", duration = 5 },
         })
+
+    On creation the window plays an entrance animation: the logo pops in
+    centre-screen with a tagline beneath it, holds for `duration` seconds,
+    then the window opens and the logo shrinks into the title bar's icon
+    slot and stays there for the session. The window is hidden until that
+    finishes, so nothing flashes behind the splash.
 
         local mainTab = window:addTab("Auto Finder")
         local section = mainTab:CreateSection("Auto Finder", "Detect and stop on matching encounters")
@@ -1759,6 +1767,17 @@ function PremiumUI.new(config)
     local configGet = config.configGet
     local configSet = config.configSet
 
+    -- Entrance splash: logo + tagline centred on screen, then the window opens
+    -- and the logo shrinks into the title bar's icon slot and stays there.
+    -- Pass splash = false to disable, or a table to override image/text/duration.
+    local splashCfg = config.splash
+    if splashCfg == nil then splashCfg = {} end
+    local splashEnabled = splashCfg ~= false
+    local splashTable = type(splashCfg) == "table" and splashCfg or {}
+    local SPLASH_IMAGE = splashTable.image or "rbxassetid://96884987787159"
+    local SPLASH_TEXT = splashTable.text or "The Klone Hub Experience"
+    local SPLASH_TIME = splashTable.duration or 5
+
     local guiParent = getGuiParent()
 
     -- Destroy any previous run of this UI before making a new one. Without
@@ -1786,6 +1805,9 @@ function PremiumUI.new(config)
     window.BackgroundColor3 = Theme.Base
     window.BorderSizePixel = 0
     window.ClipsDescendants = true
+    -- hidden from the very first frame so the window never flashes behind the
+    -- splash; the splash sequence turns it back on when it opens
+    window.Visible = not splashEnabled
     window.Parent = screenGui
 
     local windowCorner = Instance.new("UICorner")
@@ -2038,7 +2060,16 @@ function PremiumUI.new(config)
 
     local toggleKeyConnection
     if config.toggleKey then
-        toggleKeyConnection = UserInputService.InputBegan:Connect(function(input)
+        toggleKeyConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+            -- Don't fire the hotkey while the user is typing. `gameProcessed` is
+            -- true when the keystroke was already consumed by something else (a
+            -- focused TextBox, the chat bar, ...), and GetFocusedTextBox is the
+            -- direct "is a text field focused right now" check as a backstop.
+            -- Without these, every letter is also a hotkey: with toggleKey = H,
+            -- typing "Pikachu" hides the window mid-word.
+            if gameProcessed then return end
+            if UserInputService:GetFocusedTextBox() then return end
+
             if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == config.toggleKey then
                 screenGui.Enabled = not screenGui.Enabled
             end
@@ -2148,6 +2179,127 @@ function PremiumUI.new(config)
     closeBtn.MouseButton1Click:Connect(function()
         windowObj:Destroy()
     end)
+
+    -- ============================================================
+    -- Entrance animation
+    --
+    -- Logo pops in centre-screen with the tagline rising in beneath it and a
+    -- slow float while it holds. After `duration` the tagline fades, the window
+    -- opens, and the logo flies into the title bar's icon slot — where it is
+    -- reparented onto the title bar so it then drags around with the window.
+    -- ============================================================
+    if splashEnabled then
+        local ICON = 18
+        local LOGO_BIG = 190
+        local LOGO_Y = -30 -- sits slightly above centre to leave room for the text
+
+        local splashRoot = Instance.new("Frame")
+        splashRoot.Name = "Splash"
+        splashRoot.BackgroundTransparency = 1
+        splashRoot.Position = UDim2.fromOffset(0, 0)
+        splashRoot.Size = UDim2.fromScale(1, 1)
+        splashRoot.ClipsDescendants = false
+        splashRoot.Active = false -- never swallow clicks
+        splashRoot.ZIndex = 2000  -- above the dropdown overlay (1000)
+        splashRoot.Parent = screenGui
+
+        local logo = Instance.new("ImageLabel")
+        logo.Name = "Logo"
+        logo.BackgroundTransparency = 1
+        logo.Image = SPLASH_IMAGE
+        logo.ScaleType = Enum.ScaleType.Fit -- never distort, whatever the source ratio
+        logo.AnchorPoint = Vector2.new(0.5, 0.5)
+        logo.Position = UDim2.new(0.5, 0, 0.5, LOGO_Y)
+        logo.Size = UDim2.fromOffset(LOGO_BIG * 0.6, LOGO_BIG * 0.6)
+        logo.ImageTransparency = 1
+        logo.ZIndex = 2001
+        logo.Parent = splashRoot
+
+        local tagline = Instance.new("TextLabel")
+        tagline.Name = "Tagline"
+        tagline.BackgroundTransparency = 1
+        tagline.AnchorPoint = Vector2.new(0.5, 0)
+        tagline.Position = UDim2.new(0.5, 0, 0.5, 96)
+        tagline.Size = UDim2.fromOffset(460, 30)
+        tagline.FontFace = FONT_BOLD
+        tagline.TextSize = 20
+        tagline.TextColor3 = Theme.TextPrimary
+        tagline.TextTransparency = 1
+        tagline.Text = SPLASH_TEXT
+        tagline.ZIndex = 2001
+        tagline.Parent = splashRoot
+
+        task.spawn(function()
+            local POP = TweenInfo.new(0.75, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+            local RISE = TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+            TweenService:Create(logo, POP, {
+                Size = UDim2.fromOffset(LOGO_BIG, LOGO_BIG),
+                ImageTransparency = 0,
+            }):Play()
+
+            task.wait(0.35)
+            TweenService:Create(tagline, RISE, {
+                TextTransparency = 0,
+                Position = UDim2.new(0.5, 0, 0.5, 80),
+            }):Play()
+
+            -- reversing, infinite tween — a slow breath rather than a static hold
+            local float = TweenService:Create(
+                logo,
+                TweenInfo.new(1.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
+                {Position = UDim2.new(0.5, 0, 0.5, LOGO_Y - 12)}
+            )
+            float:Play()
+
+            task.wait(math.max(0, SPLASH_TIME - 0.35))
+
+            TweenService:Create(tagline, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                TextTransparency = 1,
+            }):Play()
+            task.wait(0.35)
+            tagline:Destroy()
+
+            float:Cancel() -- leaves the logo wherever it floated to; the fly-in picks up from there
+
+            -- window opens: grow from 90% back to full, staying centred (the
+            -- position offsets track the size so no AnchorPoint change is needed,
+            -- which would otherwise fight makeDraggable's positioning)
+            local OPEN = TweenInfo.new(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+            window.Size = UDim2.fromOffset(WINDOW_W * 0.9, WINDOW_H * 0.9)
+            window.Position = UDim2.new(0.5, -WINDOW_W * 0.9 / 2, 0.5, -WINDOW_H * 0.9 / 2)
+            window.Visible = true
+            TweenService:Create(window, OPEN, {
+                Size = UDim2.fromOffset(WINDOW_W, WINDOW_H),
+                Position = UDim2.new(0.5, -WINDOW_W / 2, 0.5, -WINDOW_H / 2),
+            }):Play()
+
+            -- wait for the open tween to settle before reading titleIcon's
+            -- AbsolutePosition, otherwise the logo aims at a stale slot
+            task.wait(0.5)
+
+            local slot = titleIcon.AbsolutePosition
+            local root = splashRoot.AbsolutePosition
+            local FLY = TweenInfo.new(0.85, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut)
+            local fly = TweenService:Create(logo, FLY, {
+                Position = UDim2.fromOffset(slot.X - root.X + ICON / 2, slot.Y - root.Y + ICON / 2),
+                Size = UDim2.fromOffset(ICON, ICON),
+            })
+
+            fly.Completed:Connect(function()
+                -- hand the logo to the title bar so it now moves with the window,
+                -- and retire the placeholder pokeball it just replaced
+                titleIcon.Visible = false
+                logo.AnchorPoint = Vector2.new(0, 0)
+                logo.Position = UDim2.new(0, 16, 0.5, -ICON / 2)
+                logo.Size = UDim2.fromOffset(ICON, ICON)
+                logo.ZIndex = 2
+                logo.Parent = titleBar
+                splashRoot:Destroy()
+            end)
+            fly:Play()
+        end)
+    end
 
     return windowObj
 end
