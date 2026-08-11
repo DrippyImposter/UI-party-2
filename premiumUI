@@ -467,6 +467,76 @@ local function getOverlay(descendant)
 end
 
 -- ============================================================
+-- Pokémon sprites (PokeAPI)
+--
+-- ImageLabel.Image only accepts a Roblox content id, so a PNG pulled over HTTP
+-- cannot be assigned to it directly — this is the whole reason a plain HttpGet
+-- isn't enough. The executor route is: fetch the bytes, writefile them, then
+-- getcustomasset the path back as an rbxasset:// id pointing at the local copy.
+--
+-- Cached twice over: on disk (so a sprite is downloaded once per machine, ever)
+-- and in memory (so repeat lookups skip the filesystem entirely). `pending`
+-- stops two callers racing to download the same dex number.
+-- ============================================================
+local SPRITE_FOLDER = "PremiumUI_Sprites"
+local SPRITE_URL = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/%d.png"
+local spriteCache = {}
+local spritePending = {}
+
+-- Executor-provided globals; referencing an undefined global is nil in Luau, so
+-- this degrades safely to "no sprites" rather than erroring on a weak executor.
+local function spriteSupported()
+    return (getcustomasset or getsynasset) and writefile and isfile
+end
+
+-- Yields (HttpGet). Call from a coroutine — createSprite always does.
+local function fetchSprite(dex)
+    if spriteCache[dex] then return spriteCache[dex] end
+    if not spriteSupported() then return nil end
+
+    -- another call is already downloading this one; wait for it rather than
+    -- firing a second identical request
+    while spritePending[dex] do
+        task.wait(0.05)
+        if spriteCache[dex] then return spriteCache[dex] end
+    end
+
+    local path = ("%s/%d.png"):format(SPRITE_FOLDER, dex)
+
+    if not isfile(path) then
+        spritePending[dex] = true
+
+        if isfolder and makefolder and not isfolder(SPRITE_FOLDER) then
+            pcall(makefolder, SPRITE_FOLDER)
+        end
+
+        local ok, body = pcall(function()
+            return game:HttpGet(SPRITE_URL:format(dex), true)
+        end)
+
+        -- a 404 comes back as a short HTML/text body, not an error, so length is
+        -- the practical guard against writing junk into the cache
+        if not ok or type(body) ~= "string" or #body < 100 then
+            spritePending[dex] = nil
+            return nil
+        end
+        if not pcall(writefile, path, body) then
+            spritePending[dex] = nil
+            return nil
+        end
+
+        spritePending[dex] = nil
+    end
+
+    local getAsset = getcustomasset or getsynasset
+    local ok, id = pcall(getAsset, path)
+    if not ok or type(id) ~= "string" then return nil end
+
+    spriteCache[dex] = id
+    return id
+end
+
+-- ============================================================
 -- Section — the boxed category container. One bordered box per category
 -- (title sits as a "legend" overlapping the top border), with plain rows
 -- stacked inside and NO background of their own. Sections nest: pass
@@ -1405,6 +1475,148 @@ local function createInfoContainer(body, config)
 end
 
 -- ============================================================
+-- Sprite card — Pokémon artwork beside a name and a caption line.
+--
+-- setDex(n) is fire-and-forget: it spawns the fetch, shows a placeholder while
+-- that resolves, and drops the result if a newer setDex lands first (encounters
+-- can outpace the download, and a stale sprite arriving late would otherwise
+-- overwrite the current one).
+-- ============================================================
+local function createSprite(body, config)
+    config = config or {}
+    local IMG = config.size or 64
+
+    local row = Instance.new("Frame")
+    row.BackgroundTransparency = 1
+    row.Size = UDim2.new(1, 0, 0, IMG + 8)
+    row.LayoutOrder = nextOrder()
+    row.Parent = body
+
+    local card = Instance.new("Frame")
+    card.Size = UDim2.new(1, 0, 1, 0)
+    card.BackgroundColor3 = Theme.Base
+    card.BorderSizePixel = 0
+    card.Parent = row
+
+    local cardCorner = Instance.new("UICorner")
+    cardCorner.CornerRadius = UDim.new(0, RADIUS_CONTROL)
+    cardCorner.Parent = card
+
+    local cardStroke = Instance.new("UIStroke")
+    cardStroke.Color = Theme.Border
+    cardStroke.Thickness = 1
+    cardStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    cardStroke.Parent = card
+
+    local image = Instance.new("ImageLabel")
+    image.BackgroundTransparency = 1
+    image.AnchorPoint = Vector2.new(0, 0.5)
+    image.Position = UDim2.new(0, 4, 0.5, 0)
+    image.Size = UDim2.fromOffset(IMG, IMG)
+    image.ScaleType = Enum.ScaleType.Fit
+    image.Image = ""
+    image.Parent = card
+
+    -- stands in while the sprite downloads, and whenever there's nothing to show
+    local placeholder = Instance.new("TextLabel")
+    placeholder.BackgroundTransparency = 1
+    placeholder.AnchorPoint = Vector2.new(0, 0.5)
+    placeholder.Position = UDim2.new(0, 4, 0.5, 0)
+    placeholder.Size = UDim2.fromOffset(IMG, IMG)
+    placeholder.FontFace = FONT_BOLD
+    placeholder.TextSize = 18
+    placeholder.TextColor3 = Theme.TextDim
+    placeholder.Text = "?"
+    placeholder.Parent = card
+
+    local nameLabel = Instance.new("TextLabel")
+    nameLabel.BackgroundTransparency = 1
+    nameLabel.Position = UDim2.new(0, IMG + 14, 0, 10)
+    nameLabel.Size = UDim2.new(1, -(IMG + 22), 0, 18)
+    nameLabel.FontFace = FONT_BOLD
+    nameLabel.TextSize = 14
+    nameLabel.TextColor3 = Theme.TextPrimary
+    nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+    nameLabel.Text = config.name or "—"
+    nameLabel.Parent = card
+
+    local captionLabel = Instance.new("TextLabel")
+    captionLabel.BackgroundTransparency = 1
+    captionLabel.Position = UDim2.new(0, IMG + 14, 0, 28)
+    captionLabel.Size = UDim2.new(1, -(IMG + 22), 0, 16)
+    captionLabel.FontFace = FONT_BODY
+    captionLabel.TextSize = 12
+    captionLabel.TextColor3 = Theme.TextSecond
+    captionLabel.TextXAlignment = Enum.TextXAlignment.Left
+    captionLabel.Text = config.caption or ""
+    captionLabel.Parent = card
+
+    local requestToken = 0
+
+    local function showImage(id)
+        image.Image = id
+        image.Visible = true
+        placeholder.Visible = false
+    end
+
+    local function showPlaceholder(text)
+        image.Image = ""
+        image.Visible = false
+        placeholder.Text = text or "?"
+        placeholder.Visible = true
+    end
+    showPlaceholder("?")
+
+    local api = {}
+
+    function api.setDex(dex)
+        requestToken = requestToken + 1
+        local mine = requestToken
+
+        if type(dex) ~= "number" or dex <= 0 then
+            showPlaceholder("?")
+            return
+        end
+
+        if spriteCache[dex] then
+            showImage(spriteCache[dex]) -- already local: no flicker
+            return
+        end
+
+        showPlaceholder("…")
+        task.spawn(function()
+            local id = fetchSprite(dex)
+            -- a newer setDex superseded this one while it downloaded
+            if mine ~= requestToken then return end
+            if id then showImage(id) else showPlaceholder("?") end
+        end)
+    end
+
+    function api.setName(text)
+        nameLabel.Text = text or "—"
+    end
+
+    function api.setCaption(text)
+        captionLabel.Text = text or ""
+    end
+
+    function api.set(dex, name, caption)
+        api.setDex(dex)
+        api.setName(name)
+        api.setCaption(caption)
+    end
+
+    function api.clear()
+        requestToken = requestToken + 1
+        showPlaceholder("?")
+        nameLabel.Text = "—"
+        captionLabel.Text = ""
+    end
+
+    return api
+end
+
+-- ============================================================
 -- Button Row — several buttons side by side in one row. Old-library
 -- compat: {height=, buttons={{text=, callback=}, ...}} in, returns an
 -- array of button API objects (same shape as CreateButton's return).
@@ -1686,6 +1898,10 @@ end
 
 -- old-library name — same thing, kept for call-site compatibility
 Container.addMoveButtons = Container.CreateMoveButtons
+
+function Container:CreateSprite(config)
+    return createSprite(self._body, config)
+end
 
 function Container:CreateTypeSwitcher(config)
     return createTypeSwitcher(self._body, config)
