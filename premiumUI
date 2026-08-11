@@ -489,7 +489,7 @@ local function spriteSupported()
     return (getcustomasset or getsynasset) and writefile and isfile
 end
 
--- Yields (HttpGet). Call from a coroutine — createSprite always does.
+-- Yields (HttpGet). Call from a coroutine — createInfoContainer always does.
 local function fetchSprite(dex)
     if spriteCache[dex] then return spriteCache[dex] end
     if not spriteSupported() then return nil end
@@ -1436,24 +1436,14 @@ local function createInfoContainer(body, config)
     row.LayoutOrder = nextOrder()
     row.Parent = body
 
-    local box = Instance.new("TextLabel")
+    -- A Frame, not a TextLabel: with sprite = true the artwork sits alongside
+    -- the text inside the same box, so the text needs to be a child that can be
+    -- narrowed to make room rather than being the container itself.
+    local box = Instance.new("Frame")
     box.Size = UDim2.new(1, 0, 1, 0)
     box.BackgroundColor3 = Theme.Base
-    box.FontFace = FONT_BODY
-    box.TextSize = config.textSize or 12
-    box.TextColor3 = config.textColor or Theme.TextSecond
-    box.TextXAlignment = Enum.TextXAlignment.Left
-    box.TextYAlignment = Enum.TextYAlignment.Top
-    box.TextWrapped = true
-    box.Text = config.text or ""
+    box.BorderSizePixel = 0
     box.Parent = row
-
-    local boxPad = Instance.new("UIPadding")
-    boxPad.PaddingLeft = UDim.new(0, 10)
-    boxPad.PaddingRight = UDim.new(0, 10)
-    boxPad.PaddingTop = UDim.new(0, 8)
-    boxPad.PaddingBottom = UDim.new(0, 8)
-    boxPad.Parent = box
 
     local boxCorner = Instance.new("UICorner")
     boxCorner.CornerRadius = UDim.new(0, RADIUS_CONTROL)
@@ -1462,155 +1452,68 @@ local function createInfoContainer(body, config)
     local boxStroke = Instance.new("UIStroke")
     boxStroke.Color = Theme.Border
     boxStroke.Thickness = 1
-    -- Border, NOT the default Contextual: on a TextBox/TextButton/TextLabel,
-    -- Contextual strokes the rendered glyphs rather than the object's edge, so
-    -- the text itself gets a heavy outline (very obvious while typing).
     boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     boxStroke.Parent = box
 
-    return {
-        setText = function(newText) box.Text = newText end,
+    local hasSprite = config.sprite == true
+    local SPRITE = config.spriteSize or 64
+
+    local text = Instance.new("TextLabel")
+    text.BackgroundTransparency = 1
+    text.Position = UDim2.new(0, 10, 0, 8)
+    -- reserve the right-hand strip when a sprite is present, so wrapped lines
+    -- can't run underneath the artwork
+    text.Size = hasSprite
+        and UDim2.new(1, -(20 + SPRITE + 10), 1, -16)
+        or UDim2.new(1, -20, 1, -16)
+    text.FontFace = FONT_BODY
+    text.TextSize = config.textSize or 12
+    text.TextColor3 = config.textColor or Theme.TextSecond
+    text.TextXAlignment = Enum.TextXAlignment.Left
+    text.TextYAlignment = Enum.TextYAlignment.Top
+    text.TextWrapped = true
+    text.Text = config.text or ""
+    text.Parent = box
+
+    local api = {
+        setText = function(newText) text.Text = newText end,
         setColor = function(newColor) box.BackgroundColor3 = newColor end,
     }
-end
 
--- ============================================================
--- Sprite card — Pokémon artwork beside a name and a caption line.
---
--- setDex(n) is fire-and-forget: it spawns the fetch, shows a placeholder while
--- that resolves, and drops the result if a newer setDex lands first (encounters
--- can outpace the download, and a stale sprite arriving late would otherwise
--- overwrite the current one).
--- ============================================================
-local function createSprite(body, config)
-    config = config or {}
-    local IMG = config.size or 64
-
-    local row = Instance.new("Frame")
-    row.BackgroundTransparency = 1
-    row.Size = UDim2.new(1, 0, 0, IMG + 8)
-    row.LayoutOrder = nextOrder()
-    row.Parent = body
-
-    local card = Instance.new("Frame")
-    card.Size = UDim2.new(1, 0, 1, 0)
-    card.BackgroundColor3 = Theme.Base
-    card.BorderSizePixel = 0
-    card.Parent = row
-
-    local cardCorner = Instance.new("UICorner")
-    cardCorner.CornerRadius = UDim.new(0, RADIUS_CONTROL)
-    cardCorner.Parent = card
-
-    local cardStroke = Instance.new("UIStroke")
-    cardStroke.Color = Theme.Border
-    cardStroke.Thickness = 1
-    cardStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-    cardStroke.Parent = card
-
-    local image = Instance.new("ImageLabel")
-    image.BackgroundTransparency = 1
-    image.AnchorPoint = Vector2.new(0, 0.5)
-    image.Position = UDim2.new(0, 4, 0.5, 0)
-    image.Size = UDim2.fromOffset(IMG, IMG)
-    image.ScaleType = Enum.ScaleType.Fit
-    image.Image = ""
-    image.Parent = card
-
-    -- stands in while the sprite downloads, and whenever there's nothing to show
-    local placeholder = Instance.new("TextLabel")
-    placeholder.BackgroundTransparency = 1
-    placeholder.AnchorPoint = Vector2.new(0, 0.5)
-    placeholder.Position = UDim2.new(0, 4, 0.5, 0)
-    placeholder.Size = UDim2.fromOffset(IMG, IMG)
-    placeholder.FontFace = FONT_BOLD
-    placeholder.TextSize = 18
-    placeholder.TextColor3 = Theme.TextDim
-    placeholder.Text = "?"
-    placeholder.Parent = card
-
-    local nameLabel = Instance.new("TextLabel")
-    nameLabel.BackgroundTransparency = 1
-    nameLabel.Position = UDim2.new(0, IMG + 14, 0, 10)
-    nameLabel.Size = UDim2.new(1, -(IMG + 22), 0, 18)
-    nameLabel.FontFace = FONT_BOLD
-    nameLabel.TextSize = 14
-    nameLabel.TextColor3 = Theme.TextPrimary
-    nameLabel.TextXAlignment = Enum.TextXAlignment.Left
-    nameLabel.Text = config.name or "—"
-    nameLabel.Parent = card
-
-    local captionLabel = Instance.new("TextLabel")
-    captionLabel.BackgroundTransparency = 1
-    captionLabel.Position = UDim2.new(0, IMG + 14, 0, 28)
-    captionLabel.Size = UDim2.new(1, -(IMG + 22), 0, 16)
-    captionLabel.FontFace = FONT_BODY
-    captionLabel.TextSize = 12
-    captionLabel.TextColor3 = Theme.TextSecond
-    captionLabel.TextXAlignment = Enum.TextXAlignment.Left
-    captionLabel.Text = config.caption or ""
-    captionLabel.Parent = card
-
-    local requestToken = 0
-
-    local function showImage(id)
-        image.Image = id
-        image.Visible = true
-        placeholder.Visible = false
-    end
-
-    local function showPlaceholder(text)
+    if hasSprite then
+        local image = Instance.new("ImageLabel")
+        image.BackgroundTransparency = 1
+        image.AnchorPoint = Vector2.new(1, 0.5)
+        image.Position = UDim2.new(1, -10, 0.5, 0)
+        image.Size = UDim2.fromOffset(SPRITE, SPRITE)
+        image.ScaleType = Enum.ScaleType.Fit
         image.Image = ""
-        image.Visible = false
-        placeholder.Text = text or "?"
-        placeholder.Visible = true
-    end
-    showPlaceholder("?")
+        image.Parent = box
 
-    local api = {}
+        -- Encounters can outpace the download, so each request carries a token
+        -- and a late arrival is discarded if a newer one superseded it —
+        -- otherwise the previous Pokemon's sprite lands on top of the current.
+        local token = 0
+        function api.setDex(dex)
+            token = token + 1
+            local mine = token
 
-    function api.setDex(dex)
-        requestToken = requestToken + 1
-        local mine = requestToken
+            if type(dex) ~= "number" or dex <= 0 then
+                image.Image = ""
+                return
+            end
+            if spriteCache[dex] then
+                image.Image = spriteCache[dex] -- already local: no flicker
+                return
+            end
 
-        if type(dex) ~= "number" or dex <= 0 then
-            showPlaceholder("?")
-            return
+            image.Image = ""
+            task.spawn(function()
+                local id = fetchSprite(dex)
+                if mine ~= token then return end
+                image.Image = id or ""
+            end)
         end
-
-        if spriteCache[dex] then
-            showImage(spriteCache[dex]) -- already local: no flicker
-            return
-        end
-
-        showPlaceholder("…")
-        task.spawn(function()
-            local id = fetchSprite(dex)
-            -- a newer setDex superseded this one while it downloaded
-            if mine ~= requestToken then return end
-            if id then showImage(id) else showPlaceholder("?") end
-        end)
-    end
-
-    function api.setName(text)
-        nameLabel.Text = text or "—"
-    end
-
-    function api.setCaption(text)
-        captionLabel.Text = text or ""
-    end
-
-    function api.set(dex, name, caption)
-        api.setDex(dex)
-        api.setName(name)
-        api.setCaption(caption)
-    end
-
-    function api.clear()
-        requestToken = requestToken + 1
-        showPlaceholder("?")
-        nameLabel.Text = "—"
-        captionLabel.Text = ""
     end
 
     return api
@@ -1898,10 +1801,6 @@ end
 
 -- old-library name — same thing, kept for call-site compatibility
 Container.addMoveButtons = Container.CreateMoveButtons
-
-function Container:CreateSprite(config)
-    return createSprite(self._body, config)
-end
 
 function Container:CreateTypeSwitcher(config)
     return createTypeSwitcher(self._body, config)
