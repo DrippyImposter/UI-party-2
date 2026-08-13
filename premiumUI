@@ -1484,11 +1484,20 @@ local function createInfoContainer(body, config)
         local image = Instance.new("ImageLabel")
         image.BackgroundTransparency = 1
         image.AnchorPoint = Vector2.new(1, 0.5)
-        image.Position = UDim2.new(1, -10, 0.5, 0)
+        image.Position = UDim2.new(1, -8, 0.5, 0)
         image.Size = UDim2.fromOffset(SPRITE, SPRITE)
         image.ScaleType = Enum.ScaleType.Fit
         image.Image = ""
         image.Parent = box
+
+        -- PokeAPI sprites are 96x96 pixel art. Scaling those with the default
+        -- bilinear resampler turns them into a blurry smear, so ask for
+        -- nearest-neighbour and they stay crisp at any size. pcall'd because
+        -- ResampleMode doesn't exist on older clients — losing sharpness there
+        -- is fine, erroring is not.
+        pcall(function()
+            image.ResampleMode = Enum.ResamplerMode.Pixelated
+        end)
 
         -- Encounters can outpace the download, so each request carries a token
         -- and a late arrival is discarded if a newer one superseded it —
@@ -1830,7 +1839,10 @@ local function buildFlourish(window, windowW, windowH)
     region.ZIndex = -1
     region.Parent = window
 
-    local CELL = 20
+    -- 20 produced ~500 diamonds at the default 820x560; 26 cuts that to ~300
+    -- with barely any visual difference, and every one removed is a frame the
+    -- Heartbeat below never has to consider.
+    local CELL = 26
     local cols = math.ceil(windowW / CELL)
     local rows = math.ceil(windowH / CELL)
     local maxDist = math.sqrt(windowW ^ 2 + windowH ^ 2)
@@ -1897,23 +1909,64 @@ local function buildFlourish(window, windowW, windowH)
     -- gradient value, so moving the mouse anywhere across the mesh "lights
     -- up" that patch, not just near the corner.
     local RADIUS = 90
-    local STIFFNESS = 250
-    local DAMPING = 20
+    local RADIUS_SQ = RADIUS * RADIUS
+    -- Near-critical damping (critical for this stiffness is ~2*sqrt(250) ≈ 31.6).
+    -- It was 20, which is well underdamped: every diamond the cursor passed kept
+    -- ringing for seconds afterwards, so the whole trail stayed "active" and kept
+    -- writing properties long after you had moved on.
+    local STIFFNESS = 260
+    local DAMPING = 28
     local SHRINK = 0.25
     local PRESSED_FILL = 0.35
     local PRESSED_STROKE = 0.05
+    -- below this, snap to rest and stop touching the block entirely
+    local REST_EPS = 0.002
 
+    local REST_SIZE = UDim2.fromOffset(DIAMOND_SIDE, DIAMOND_SIDE)
+    for _, b in ipairs(blocks) do b.atRest = true end
+
+    -- Per frame this used to do a sqrt and THREE property writes for every block
+    -- in the mesh (~450-500 of them), i.e. ~90k GUI property writes a second,
+    -- each invalidating layout. That is what crashed the client on heavy cursor
+    -- movement. Now only blocks actually being pressed, or still springing back,
+    -- are touched — typically a few dozen — and settled ones cost one squared
+    -- distance compare and nothing else.
     local connection = RunService.Heartbeat:Connect(function(dt)
         local mouse = UserInputService:GetMouseLocation() - GuiService:GetGuiInset()
         local winPos = window.AbsolutePosition
+        -- convert once, into window space, instead of per block
+        local mx = mouse.X - winPos.X
+        local my = mouse.Y - winPos.Y
 
         for _, b in ipairs(blocks) do
-            local bx = winPos.X + b.cx
-            local by = winPos.Y + b.cy
-            local dist = math.sqrt((mouse.X - bx) ^ 2 + (mouse.Y - by) ^ 2)
+            local dx = mx - b.cx
+            local dy = my - b.cy
+            local dsq = dx * dx + dy * dy
 
-            local t = math.clamp(1 - dist / RADIUS, 0, 1)
-            local target = t * t * (3 - 2 * t) -- smoothstep falloff, nicer than linear
+            local target = 0
+            if dsq < RADIUS_SQ then
+                local t = 1 - math.sqrt(dsq) / RADIUS   -- sqrt only inside the radius
+                target = t * t * (3 - 2 * t)            -- smoothstep falloff
+            end
+
+            -- settled, and nothing pulling on it: skip completely
+            if target == 0 and b.atRest then
+                continue
+            end
+
+            if target == 0
+                and b.depth < REST_EPS and b.depth > -REST_EPS
+                and b.velocity < REST_EPS and b.velocity > -REST_EPS then
+                -- one final write to exact rest values, then leave it alone
+                b.depth, b.velocity = 0, 0
+                b.atRest = true
+                b.frame.Size = REST_SIZE
+                b.frame.BackgroundTransparency = 1
+                b.stroke.Transparency = b.baseStrokeTransparency
+                continue
+            end
+
+            b.atRest = false
 
             local accel = (target - b.depth) * STIFFNESS - b.velocity * DAMPING
             b.velocity += accel * dt
