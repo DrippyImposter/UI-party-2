@@ -638,10 +638,9 @@ local function createSection(parent, title, description)
     titleGroupLayout.Padding = UDim.new(0, 5)
     titleGroupLayout.Parent = titleGroup
 
-    -- No pokeball here: every section is a bordered box whose legend sits in its
-    -- top-left corner, so an icon per section put one in the corner of all ~15
-    -- boxes. titleGroup is a horizontal UIListLayout with AutomaticSize.X, so
-    -- dropping it just leaves the label and the group shrinks to fit.
+    local titleIcon = createPokeball(11)
+    titleIcon.LayoutOrder = 1
+    titleIcon.Parent = titleGroup
 
     local titleLabel = Instance.new("TextLabel")
     titleLabel.BackgroundTransparency = 1
@@ -1837,6 +1836,11 @@ local function buildFlourish(window, windowW, windowH)
     region.BackgroundTransparency = 1
     region.Size = UDim2.new(1, 0, 1, 0)
     region.ZIndex = -1
+    -- Clips on its own account, not just via the window. The diamonds are placed
+    -- at absolute offsets computed from windowH at build time, so anything that
+    -- resizes the window (minimise, the show/hide tween) leaves them sticking out
+    -- past the frame they were measured against.
+    region.ClipsDescendants = true
     region.Parent = window
 
     -- 20 produced ~500 diamonds at the default 820x560; 26 cuts that to ~300
@@ -1855,14 +1859,21 @@ local function buildFlourish(window, windowW, windowH)
     local topGapMin = TITLE_H + TAB_H
     local topGapMax = topGapMin + 16
 
+    -- Stop the mesh above the footer. A diamond is rotated 45 degrees, so its
+    -- corners reach ~0.71 * DIAMOND_SIDE beyond its centre — the bottom row was
+    -- landing close enough to the window edge for those corners to poke out
+    -- underneath the footer. Nothing is drawn under the opaque footer anyway.
+    local bottomLimit = windowH - FOOTER_H
+
     for row = 0, rows - 1 do
         for col = 0, cols - 1 do
             local x = col * CELL
             local y = row * CELL
             local inEdgeZone = x < EDGE_MARGIN or (x + CELL) > (windowW - EDGE_MARGIN)
             local inTopGap = (y + CELL) > topGapMin and y < topGapMax
+            local belowBody = (y + CELL) > bottomLimit
 
-            if not inEdgeZone and not inTopGap then
+            if not inEdgeZone and not inTopGap and not belowBody then
                 local dx = x
                 local dy = windowH - y
                 local dist = math.sqrt(dx * dx + dy * dy) / maxDist -- 0 at bottom-left corner, 1 at far corner
